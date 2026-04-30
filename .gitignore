@@ -1,0 +1,26 @@
+# --- Build Artifacts ---
+build/
+bin/
+obj/
+
+# --- Generated PIO Headers ---
+# These are generated during build and should not be tracked
+*.pio.h
+
+# --- Editor / IDE ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.cache/
+compile_commands.json
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+# --- Backup / Temporary ---
+*~
+*.bak
+*.swp

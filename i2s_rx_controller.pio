@@ -1,0 +1,58 @@
+; i2s_rx_controller.pio
+.program i2s_rx_controller
+.side_set 2
+
+; Act as I2S controller (master), receiving data from an I2S peripheral (PCM1808)
+; Pin configuration:
+; - Side-set pin 0: BCLK
+; - Side-set pin 1: LRCK (Word Select)
+; - IN pin: DIN (Data from PCM1808)
+
+public entry_point:
+.wrap_target
+
+left_channel:
+    ; --- LEFT CHANNEL (LRCK = 0) ---
+    set  x, 29          side 0b00   ; BCLK falls, PCM1808 shifts out Left MSB
+left_loop:
+    in   pins, 1        side 0b01   ; BCLK rises, sample stable data
+    jmp  x-- left_loop  side 0b00   ; BCLK falls, shift out next bit
+
+    in   pins, 1        side 0b01   ; BCLK rises, sample penultimate bit (bit index 1)
+    nop                 side 0b10   ; I2S 1-BIT DELAY: LRCK=1 before Right MSB
+    in   pins, 1        side 0b11   ; BCLK rises, sample Left LSB. Auto-push!
+
+right_channel:
+    ; --- RIGHT CHANNEL (LRCK = 1) ---
+    set  x, 29          side 0b10   ; BCLK falls, PCM1808 shifts out Right MSB
+right_loop:
+    in   pins, 1        side 0b11   ; BCLK rises, sample stable data
+    jmp  x-- right_loop side 0b10   ; BCLK falls, shift out next bit
+
+    in   pins, 1        side 0b11   ; BCLK rises, sample penultimate bit (bit index 1)
+    nop                 side 0b00   ; I2S 1-BIT DELAY: LRCK=0 before Left MSB
+    in   pins, 1        side 0b01   ; BCLK rises, sample Right LSB. Auto-push!
+.wrap
+
+% c-sdk {
+static inline void i2s_rx_controller_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base) {
+    pio_sm_config sm_config = i2s_rx_controller_program_get_default_config(offset);
+    
+    sm_config_set_in_pins(&sm_config, data_pin);
+    sm_config_set_sideset_pins(&sm_config, clock_pin_base);
+    sm_config_set_in_shift(&sm_config, false, true, 32); // Shift left (MSB first), Autopush @ 32 bits
+    sm_config_set_fifo_join(&sm_config, PIO_FIFO_JOIN_RX);
+
+    // Initialize GPIOs
+    pio_gpio_init(pio, data_pin);
+    pio_gpio_init(pio, clock_pin_base);
+    pio_gpio_init(pio, clock_pin_base + 1);
+
+    // Set pin directions
+    pio_sm_set_consecutive_pindirs(pio, sm, data_pin, 1, false);       // Input
+    pio_sm_set_consecutive_pindirs(pio, sm, clock_pin_base, 2, true);  // Output
+
+    pio_sm_init(pio, sm, offset, &sm_config);
+    // Note: pio_sm_exec jump is intentionally omitted here as pio_sm_init starts at offset 0
+}
+%}

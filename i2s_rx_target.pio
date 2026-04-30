@@ -1,0 +1,92 @@
+; i2s_rx_target.pio
+.program i2s_rx_target
+
+; Act as I2S target (slave), receiving data from an external controller (PCM1808).
+; The external controller provides BCLK and LRCK. We read DIN, BCLK, and LRCK.
+
+public entry_point:
+; --- INITIAL FRAME SYNC ---
+
+; 1. Wait for the Right channel (LRCK = 1) to ensure we don't start mid-Left
+public wait_lrck_high:
+    wait 1 gpio 0       ; [PATCHED IN C TO LRCK PIN]
+    
+; 2. Wait for the Left channel to begin (LRCK = 0)
+public wait_lrck_low:
+    wait 0 gpio 0       ; [PATCHED IN C TO LRCK PIN]
+
+; LRCK just went low. This is the 1-bit delay period.
+; 3. Wait for BCLK high phase of the delay bit
+public wait_bclk_high_sync:
+    wait 1 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    
+; 4. Wait for BCLK to fall. PCM1808 shifts out the Left MSB here.
+public wait_bclk_low_sync:
+    wait 0 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    
+.wrap_target
+
+left_channel:
+    set  x, 31          ; Initialize loop counter for 32 bits
+left_loop:
+public wait_bclk_high_l:
+    wait 1 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    in   pins, 1        ; Sample stable data on BCLK rising edge
+public wait_bclk_low_l:
+    wait 0 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    jmp  x-- left_loop  ; Loop until 32 bits are read
+    
+right_channel:
+    set  x, 31          ; Initialize loop counter for 32 bits
+right_loop:
+public wait_bclk_high_r:
+    wait 1 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    in   pins, 1        ; Sample stable data on BCLK rising edge
+public wait_bclk_low_r:
+    wait 0 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    jmp  x-- right_loop ; Loop until 32 bits are read
+
+.wrap
+
+% c-sdk {
+static inline void i2s_rx_target_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base) {
+    pio_sm_config sm_config = i2s_rx_target_program_get_default_config(offset);
+    
+    uint bclk_pin = clock_pin_base;
+    uint lrck_pin = clock_pin_base + 1;
+    
+    sm_config_set_in_pins(&sm_config, data_pin);
+    sm_config_set_in_shift(&sm_config, false, true, 32); // Shift left (MSB first), Autopush @ 32 bits
+    sm_config_set_fifo_join(&sm_config, PIO_FIFO_JOIN_RX);
+
+    // Initialize GPIOs
+    pio_gpio_init(pio, data_pin);
+    pio_gpio_init(pio, bclk_pin);
+    pio_gpio_init(pio, lrck_pin);
+
+    // Set all pins to inputs (since we are target, clocks come from outside)
+    pio_sm_set_consecutive_pindirs(pio, sm, data_pin, 1, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, clock_pin_base, 2, false);
+
+    // Dynamically patch the dummy 'wait' instructions with the actual GPIO pins.
+    // This allows you to wire BCLK and LRCK to ANY pins without restriction!
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_lrck_high] = pio_encode_wait_gpio(true, lrck_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_lrck_low]  = pio_encode_wait_gpio(false, lrck_pin);
+    
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_sync] = pio_encode_wait_gpio(true, bclk_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_sync]  = pio_encode_wait_gpio(false, bclk_pin);
+    
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_l] = pio_encode_wait_gpio(true, bclk_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_l]  = pio_encode_wait_gpio(false, bclk_pin);
+    
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_r] = pio_encode_wait_gpio(true, bclk_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_r]  = pio_encode_wait_gpio(false, bclk_pin);
+
+    // The target should run as fast as possible (un-divided sys clock) 
+    // to catch external clock edges instantly.
+    sm_config_set_clkdiv(&sm_config, 1.0f);
+
+    pio_sm_init(pio, sm, offset, &sm_config);
+    // Note: pio_sm_exec jump is intentionally omitted here as pio_sm_init starts at offset 0
+}
+%}
