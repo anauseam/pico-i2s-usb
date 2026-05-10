@@ -40,6 +40,7 @@ add_executable(pico-i2s-usb
     src/i2s_audio.c
     src/dma_audio.c
     src/usb_audio.c
+    src/usb_descriptors.c
 )
 
 pico_set_program_name(pico-i2s-usb "pico-i2s-usb")
@@ -50,8 +51,8 @@ pico_generate_pio_header(pico-i2s-usb ${CMAKE_CURRENT_LIST_DIR}/src/i2s_rx_contr
 pico_generate_pio_header(pico-i2s-usb ${CMAKE_CURRENT_LIST_DIR}/src/i2s_rx_target.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(pico-i2s-usb 0)
-pico_enable_stdio_usb(pico-i2s-usb 1)
+pico_enable_stdio_uart(pico-i2s-usb 1)
+pico_enable_stdio_usb(pico-i2s-usb 0)
 
 # Add the standard library and hardware libraries to the build
 target_link_libraries(pico-i2s-usb
@@ -60,6 +61,8 @@ target_link_libraries(pico-i2s-usb
         hardware_dma
         hardware_clocks
         hardware_pwm
+        tinyusb_device
+        tinyusb_board
 )
 
 # Add the standard include files to the build

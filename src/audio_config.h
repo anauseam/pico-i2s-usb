@@ -4,10 +4,10 @@
 // --- CONFIGURATION ---
 
 // Toggle this between 1 (Controller/Master) and 0 (Target/Slave)
-#define USE_CONTROLLER_MODE 0
+#define USE_CONTROLLER_MODE 1
 
 // Toggle MCLK generation independent of I2S role
-#define GENERATE_MCLK 0
+#define GENERATE_MCLK 1
 
 // Pin Setup
 #define PIN_DIN 2         // Data In (from ADC DOUT)
@@ -15,12 +15,11 @@
 #define PIN_MCLK 12       // Master Clock out to ADC
 
 // Audio Setup
+// Note: If GENERATE_MCLK is 1 and SAMPLE_RATE > 16000, you will see a build warning.
+// PWM MCLK above 16kHz is empirically unreliable on RP2350 due to fractional divider jitter.
+// For production use at 44.1/48/96kHz, it is highly recommended to use an external clock
+// source (e.g. 24.576MHz crystal) instead of the internal PWM generator.
 #define SAMPLE_RATE 48000 // Supported: 44100, 48000, 96000
-
-#if GENERATE_MCLK && (SAMPLE_RATE > 16000)
-#warning                                                                                           \
-    "PWM MCLK above 16kHz is empirically unreliable on RP2350 due to fractional divider jitter. Use an external clock source or custom board with 24.576MHz crystal for production use."
-#endif
 
 // --- DOUBLE BUFFER SETUP ---
 #define AUDIO_BUFFER_SIZE 256 // Stores 128 Left and 128 Right 32-bit samples per buffer

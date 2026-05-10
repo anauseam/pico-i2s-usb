@@ -8,6 +8,11 @@
 #include "i2s_rx_controller.pio.h"
 #include "i2s_rx_target.pio.h"
 
+#if GENERATE_MCLK && (SAMPLE_RATE > 16000)
+#warning                                                                                           \
+    "PWM MCLK above 16kHz is empirically unreliable on RP2350 due to fractional divider jitter. Use an external clock source or custom board with 24.576MHz crystal for production use."
+#endif
+
 #if GENERATE_MCLK
 static void setup_mclk_pwm(uint gpio) {
     gpio_set_function(gpio, GPIO_FUNC_PWM);
