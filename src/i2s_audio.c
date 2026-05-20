@@ -20,6 +20,9 @@ static void setup_mclk_pwm(uint gpio) {
     pwm_config config = pwm_get_default_config();
 
     uint32_t mclk_freq = SAMPLE_RATE * 256;
+    // With wrap=1, the PWM period is 2 clock ticks (tick 0 and tick 1).
+    // Therefore, the effective frequency is sys_clk / (divider * 2).
+    // This is why we multiply the target frequency by 2 here.
     float divider = (float)clock_get_hz(clk_sys) / (float)(mclk_freq * 2);
 
     pwm_config_set_clkdiv(&config, divider);
@@ -51,6 +54,11 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
     pio_sm_set_clkdiv(*pio_out, *sm_out, clkdiv);
 #else
     printf("Starting I2S as TARGET (Expecting %d Hz from master)...\n", SAMPLE_RATE);
+    
+    // ARCHITECTURAL LIMITATION: Currently, there is no documented recovery path or 
+    // watchdog for the PIO state machine if a BCLK/LRCK glitch causes frame misalignment. 
+    // If the external clock stutters, the SM may permanently offset the 32-bit frames.
+    
     offset = pio_add_program(*pio_out, &i2s_rx_target_program);
     i2s_rx_target_program_init(*pio_out, *sm_out, offset, PIN_DIN, PIN_CLOCK_BASE);
 #endif

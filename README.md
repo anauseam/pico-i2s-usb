@@ -1,17 +1,17 @@
 # pico-i2s-usb
 
-Raspberry Pi Pico 2 (RP2350) I2S-to-USB UAC1 Audio Interface
+Raspberry Pi Pico 2 (RP2350) I2S-to-USB UAC2 Audio Interface
 
 ## Overview
 
 This repository contains bare-metal C firmware that turns a Raspberry Pi Pico 2 and a standard **24-bit I2S** Analog-to-Digital Converter (ADC) into a driverless, plug-and-play USB audio interface.
 
-It reads standard I2S digital audio data from an external ADC (such as the PCM1808 or TAA5242) and bridges it to a host computer over USB using the universal USB Audio Class 1 (UAC1) standard. The host device (Windows, macOS, or Linux) will recognize the Pico as a standard USB microphone or line-in device.
+It reads standard I2S digital audio data from an external ADC (such as the PCM1808 or TAA5242) and streams it to a host computer over USB using the USB Audio Class 2.0 (UAC2) standard. The host (Windows, macOS, or Linux) recognizes the Pico as a standard USB microphone or line-in device — no drivers required.
 
-> [!IMPORTANT]
-> **Project Status**
->
-> The project is currently under active development. Only the I2S input portion is implemented. USB audio output will be added in the near future. Thus, there are no binaries on the releases page yet.
+> [!NOTE]
+> **Windows Compatibility**
+> UAC2 is natively supported (driverless) on **macOS**, **Linux**, and **Windows 11**.
+> **Windows 10 and earlier** require a third-party UAC2 driver. If broad Windows compatibility is a hard requirement, consider reworking the descriptors to target UAC1.
 
 ## Quick Start
 
@@ -71,62 +71,145 @@ Once wired, plug the Pico into your computer. It will appear in your system audi
 
 ## Technical Details
 
-This firmware is built using the official Raspberry Pi Pico C/C++ SDK and the TinyUSB stack. It uses custom PIO (Programmable I/O) state machine programs to capture I2S audio data and a DMA ping-pong buffer to move audio into memory with zero CPU overhead.
+This firmware is built using the official Raspberry Pi Pico C/C++ SDK and the TinyUSB stack. It uses custom PIO (Programmable I/O) state machine programs to capture I2S audio data, a DMA ping-pong buffer to move audio into memory with zero CPU overhead, and TinyUSB's UAC2 audio class driver to stream the data to the host.
 
-### Architecture
+### Data Pipeline
 
-- **USB Protocol**: UAC1 (USB Audio Class 1). Chosen specifically to operate within the RP2350's USB 1.1 Full Speed (12 Mbps) hardware limit without requiring host-side drivers.
-- **I2S Role**: The Pico can act as either the I2S **Controller** (generating BCLK/LRCK) or **Target** (receiving external clocks). The default is Target mode.
-- **Data Flow**: Audio data is captured by the PIO state machine and transferred to memory via a DMA ping-pong pipeline. TinyUSB audio callbacks then stream the data to the host.
+The complete audio path from analog signal to host application:
 
-### Clock Generation
+```text
+Analog Signal
+    │
+    ▼
+┌────────────┐   MCLK/BCLK/LRCK    ┌────────────┐   PIO RX FIFO   ┌──────────────┐
+│  External  ├────────────────────►│  PIO State │────────────────►│  DMA Engine  │
+│    ADC     │  I2S Data (DIN)     │  Machine   │ (32-bit words)  │ (Ping-Pong)  │
+└────────────┘                     └────────────┘                 └──────┬───────┘
+                                                                         │
+                                                           DMA IRQ fires │ buffer ready
+                                                                         ▼
+┌──────────┐   USB ISO Packets   ┌────────────┐   tud_audio_write  ┌─────────────┐
+│   Host   │◄────────────────────┤  TinyUSB   │◄───────────────────┤  Main Loop  │
+│   (PC)   │   (384 bytes/1ms)   │  UAC2 EP   │   (1024 bytes)     │ (Conductor) │
+└──────────┘                     └────────────┘                    └─────────────┘
+```
 
-The Pico runs at its default 150 MHz system clock. No PLL adjustments are made.
+1. **PIO Capture** — A custom PIO state machine receives I2S data on external BCLK/LRCK edges, packing each 32-bit sample into the PIO RX FIFO.
+2. **DMA Ping-Pong** — Two DMA channels are chained together. While one fills a 256-word buffer from the PIO FIFO, the other's completed buffer is available for consumption. A DMA completion interrupt signals the main loop.
+3. **Main Loop** — Polls for completed DMA buffers and writes them directly into TinyUSB's internal FIFO via `tud_audio_write()`. The I2S data is passed through without format conversion — the UAC2 descriptors tell the host how to interpret the 32-bit containers (24-bit audio in a 32-bit sample slot).
+4. **USB Transmission** — TinyUSB autonomously drains its 4096-byte software FIFO into Isochronous IN packets at the USB Full-Speed 1ms frame rate. The FIFO decouples the 2.66ms DMA burst rate from the 1ms USB polling rate.
 
-- **Target Mode (Default):** The Pico receives BCLK and LRCK from the external ADC. The PIO state machine runs at the full 150 MHz system clock to catch external clock edges with minimal latency.
-- **Controller Mode:** The PIO state machine generates BCLK and LRCK via side-set pins, derived from the 150 MHz system clock with a calculated divider.
+### USB Audio Implementation
 
-> [!WARNING]
-> Controller mode has been validated at sample rates up to **48 kHz**. At 96 kHz and above, the fractional PIO clock divider introduces increasing BCLK jitter (±1 system clock cycle, ~6.67 ns) which may affect ADC synchronization. For reliable operation at high sample rates in Controller mode, a crystal-derived clock source is recommended.
+The USB stack presents the device as a **stereo UAC2 microphone** using the following descriptor topology:
 
-#### MCLK Generation (Debug / Low Sample Rate Only)
+```text
+Input Terminal (Generic Mic, ID=1)
+    │
+    ▼
+Feature Unit (ID=2, Mute/Volume stubs)
+    │
+    ▼
+Output Terminal (USB Streaming, ID=3) ──► Isochronous IN Endpoint (0x81)
+    │
+Clock Source (Internal Fixed, ID=4)
+```
 
-> [!WARNING]
-> **PWM MCLK is limited to sample rates ≤ 16 kHz** (MCLK ≤ 4.096 MHz).
->
-> The RP2350's PWM hardware uses a fractional clock divider, which introduces cycle-to-cycle jitter at higher frequencies. Empirical testing has shown that the generated clock becomes unreliable above 4.096 MHz. This feature is intended for debugging and low-sample-rate prototyping only.
->
-> For production use at standard sample rates (44.1 kHz, 48 kHz, 96 kHz), use an **external oscillator** to provide MCLK to your ADC.
+**Key parameters:**
 
-If enabled via `GENERATE_MCLK` in `src/audio_config.h`, the Pico will output a square wave on `GPIO 12` at 256 × the configured sample rate.
+| Parameter | Value |
+| :--- | :--- |
+| USB Speed | Full Speed (12 Mbps) |
+| Audio Format | PCM, Type I |
+| Container Size | 32-bit (4 bytes per sample) |
+| Bit Depth | 24-bit (in 32-bit container) |
+| Channels | 2 (Stereo: Front Left, Front Right) |
+| Sample Rate | Fixed, single rate (configured in `audio_config.h`) |
+| Isochronous Mode | Asynchronous |
+| Max EP Size | `(SAMPLE_RATE / 1000 + 1) × 2 × 4` bytes |
+| SW FIFO | 4096 bytes |
+
+#### TinyUSB Configuration (`tusb_config.h`)
+
+The TinyUSB stack requires several non-default configuration choices on the RP2350. These are based on source code analysis and have not been independently validated by reverting them:
+
+- **Flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`). TinyUSB's flow control path in `audiod_calc_tx_packet_sz()` requires the sample rate to be set via `SET_CUR` before `SET_INTERFACE`. Linux's UAC2 driver sends these in the opposite order. Disabling flow control bypasses this dependency.
+- **`tu_static` is overridden to force 4-byte alignment.** TinyUSB's internal byte arrays may not be naturally aligned, which could cause alignment faults on the RP2350's RISC-V cores during 32-bit memory operations.
+
+#### Isochronous Endpoint Management (`usb_audio.c`)
+
+TinyUSB's RP2040/RP2350 DCD uses `TUP_DCD_EDPT_ISO_ALLOC`, which pre-allocates Isochronous endpoints and skips the standard close/reopen sequence during `SET_INTERFACE` alternate setting transitions. This leaves the hardware DPRAM `USB_BUF_CTRL_AVAIL` bit set after the host deactivates the stream (Alt 0). When the host reactivates (Alt 1), the DCD attempts to set the bit again, triggering a hardware panic (`ep 81 was already available`). This was confirmed via UART debug output.
+
+`tud_audio_set_itf_close_EP_cb` manually clears the `AVAIL` and `FULL` bits in the RP2350 USB DPRAM buffer control registers for the audio endpoint before TinyUSB reactivates it.
+
+All remaining UAC2 control callbacks (GET/SET for entities, endpoints, and interfaces) return success or zero-length ACKs rather than STALL responses. This is a precautionary measure — STALL behavior on the RP2350's USB peripheral has not been independently tested and may or may not cause issues.
+
+### Clock Architecture
+
+Empirical testing of all four possible clock configurations (the 2×2 matrix of Controller/Target × MCLK source) produced the following results:
+
+| | **MCLK = External Oscillator** | **MCLK = Pico PWM** |
+| :--- | :--- | :--- |
+| **Pico = Target (ADC is Master)** | ✅ Validated (44.1 / 48 / 96 kHz) | ✅ Validated (44.1 / 48 / 96 kHz) |
+| **Pico = Controller (ADC is Slave)** | ❌ Guaranteed failure | ❌ Fails above 16 kHz |
+
+**The Pico cannot act as I2S Controller.** Both configurations where the Pico generates BCLK and LRCK fail:
+
+- **With external MCLK:** The Pico's PIO clocks and the external oscillator are physically independent clock domains with no synchronization. LRCK will inevitably drift against MCLK, causing the ADC to lose sync.
+- **With PWM MCLK:** The Pico's PWM (MCLK) and PIO (BCLK/LRCK) use independent fractional dividers of the same 150 MHz PLL. These accumulate phase error relative to each other, violating the ADC's requirement that BCLK and LRCK be coherently derived from MCLK.
+
+This firmware therefore locks `USE_CONTROLLER_MODE` to `0`. Setting it to `1` produces a compile-time error.
+
+#### Target Mode with External Oscillator (Default — Recommended)
+
+The external oscillator feeds MCLK directly into the ADC. The ADC divides it internally to produce perfectly phase-coherent BCLK and LRCK, which it sends to the Pico. The Pico's PIO state machine runs at the full 150 MHz system clock to catch external edges with minimal latency. This is the highest-fidelity configuration.
+
+#### Target Mode with PWM MCLK (No External Oscillator)
+
+Enable via `GENERATE_MCLK 1` in `src/audio_config.h`. The Pico generates a PWM square wave on `GPIO 12` at 256 × the configured sample rate and feeds it into the ADC as MCLK. The ADC runs in Master mode, deriving coherent BCLK and LRCK internally from this input, and sends them to the Pico.
+
+Although the PWM clock contains fractional-divider jitter (~6.67 ns cycle-to-cycle variation), the ADC's internal PLL is robust enough to tolerate it. This has been validated at 44.1 kHz, 48 kHz, and 96 kHz. This configuration requires no external oscillator hardware, at the cost of a small, measurable increase in clock noise.
 
 ### Project Structure
 
-```
+```text
 pico-i2s-usb/
 ├── CMakeLists.txt                  # Build configuration
 ├── pico_sdk_import.cmake           # Pico SDK integration
 └── src/
-    ├── main.c                      # Entry point and main loop
-    ├── audio_config.h              # All configuration defines (pins, sample rate, modes)
+    ├── main.c                      # Entry point and conductor loop
+    ├── audio_config.h              # All configuration (pins, sample rate, modes, debug)
     ├── i2s_audio.c / .h            # PIO initialization, clock setup, MCLK PWM
     ├── i2s_rx_controller.pio       # PIO program: Controller mode (generates BCLK/LRCK)
     ├── i2s_rx_target.pio           # PIO program: Target mode (receives external clocks)
     ├── dma_audio.c / .h            # DMA ping-pong buffer management and ISR
-    └── usb_audio.c / .h            # TinyUSB callbacks, descriptors, USB packet handling
+    ├── usb_audio.c / .h            # TinyUSB callbacks, USB packet handling, RP2350 workarounds
+    ├── usb_descriptors.c / .h      # UAC2 device, configuration, and string descriptors
+    └── tusb_config.h               # TinyUSB stack configuration and RP2350 alignment fixes
 ```
 
-All user-configurable options (I2S mode, pin assignments, sample rate, MCLK toggle, buffer size) are centralized in `src/audio_config.h`.
+All user-configurable options (I2S mode, pin assignments, sample rate, MCLK toggle, buffer size, debug logging) are centralized in `src/audio_config.h`.
+
+### Debugging
+
+Set `AUDIO_DEBUG_LOGGING` to `1` in `src/audio_config.h` to enable periodic UART logging of raw I2S sample values in the main loop. When enabled, one line is printed approximately every 1.3 seconds to minimize impact on the real-time audio path.
+
+UART output is routed to the default SDK UART pins. Connect a USB-to-serial adapter or a Raspberry Pi Debug Probe to read the output.
+
+> [!WARNING]
+> `CFG_TUSB_DEBUG` in `tusb_config.h` must remain at `0` during audio streaming. With debug level 2 enabled, the audio stream was observed to arrive at a fraction of its expected rate in Audacity. Disabling debug output resolved the issue. The likely cause is that TinyUSB's per-transfer log output blocks `tud_task()` on the UART, but this mechanism has not been independently verified.
 
 ### Building from Source
 
 This project uses standard CMake and relies on the official Raspberry Pi Pico SDK.
 
 **Prerequisites:**
+
 - Raspberry Pi Pico SDK (v2.0.0+)
 - Appropriate toolchain package (`arm-none-eabi-gcc` or `riscv64-elf-gcc`)
 
 **Standard Build Flow:**
+
 ```bash
 mkdir build && cd build
 

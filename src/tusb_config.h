@@ -8,6 +8,10 @@ extern "C" {
 // --- System / Core ---
 #define CFG_TUSB_RHPORT0_MODE OPT_MODE_DEVICE
 #define CFG_TUSB_OS OPT_OS_PICO
+#ifdef CFG_TUSB_DEBUG
+#undef CFG_TUSB_DEBUG
+#endif
+#define CFG_TUSB_DEBUG 0 // Disable debug logging on UART to prevent audio bottleneck
 #define CFG_TUD_ENDPOINT0_SIZE 64
 
 // --- Enabled USB Classes ---
@@ -33,11 +37,13 @@ extern "C" {
 #define CFG_TUD_AUDIO_FUNC_1_N_AS_INT 1   // 1 Audio Streaming Interface
 #define CFG_TUD_AUDIO_FUNC_1_CTRL_BUF_SZ 64
 
-// TX FIFO: Must be large enough to hold our DMA buffer.
-// 128 stereo samples * 4 bytes = 1024 bytes. 2048 gives us breathing room!
 #define CFG_TUD_AUDIO_ENABLE_EP_IN 1
-#define CFG_TUD_AUDIO_FUNC_1_TX_FIFO_SZ 2048
-#define CFG_TUD_AUDIO_FUNC_1_RX_FIFO_SZ 0
+
+// Disable flow control — it requires sample_rate_tx to be set via SET_CUR
+// before SET_INTERFACE, but Linux sends SET_INTERFACE first. With flow
+// control enabled, audiod_calc_tx_packet_sz() silently fails and leaves
+// packet_sz_tx at zero, making the TX path fragile.
+#define CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0
 
 #define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX  4   // 32-bit container
 #define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX           2   // Stereo
@@ -45,8 +51,17 @@ extern "C" {
 #include "audio_config.h"
 
 // Isochronous Endpoint settings
-#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX (((SAMPLE_RATE / 1000) + ((SAMPLE_RATE % 1000) ? 1 : 0)) * 2 * 4)
-#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ 2048
+#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX (((SAMPLE_RATE / 1000) + 1) * 2 * 4)
+#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ 4096
+
+// --- TINYUSB RISC-V ALIGNMENT FIX ---
+// TinyUSB declares several internal byte arrays (like ctrl_buf_1) using tu_static.
+// GCC does not align uint8_t arrays by default, which causes fatal Alignment Faults 
+// on the RP2350's RISC-V cores when tu_memcpy_s is used during UAC2 control requests 
+// (e.g. SET_CUR). By overriding tu_static to force 4-byte alignment, we guarantee 
+// all internal state buffers are safe for 32-bit load/store instructions.
+#undef tu_static
+#define tu_static static __attribute__((aligned(4)))
 
 #ifdef __cplusplus
 }
