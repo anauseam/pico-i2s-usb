@@ -1,12 +1,17 @@
 #include "i2s_audio.h"
 #include "audio_config.h"
+#if GENERATE_MCLK
 #include "hardware/clocks.h"
 #include "hardware/pwm.h"
+#endif
 #include <stdio.h>
 
 // The Pico C/C++ SDK automatically generates these headers from your .pio files
+#if USE_CONTROLLER_MODE
 #include "i2s_rx_controller.pio.h"
+#else
 #include "i2s_rx_target.pio.h"
+#endif
 
 #if GENERATE_MCLK && (SAMPLE_RATE > 16000)
 #warning                                                                                           \
@@ -54,11 +59,11 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
     pio_sm_set_clkdiv(*pio_out, *sm_out, clkdiv);
 #else
     printf("Starting I2S as TARGET (Expecting %d Hz from master)...\n", SAMPLE_RATE);
-    
-    // ARCHITECTURAL LIMITATION: Currently, there is no documented recovery path or 
-    // watchdog for the PIO state machine if a BCLK/LRCK glitch causes frame misalignment. 
+
+    // ARCHITECTURAL LIMITATION: Currently, there is no documented recovery path or
+    // watchdog for the PIO state machine if a BCLK/LRCK glitch causes frame misalignment.
     // If the external clock stutters, the SM may permanently offset the 32-bit frames.
-    
+
     offset = pio_add_program(*pio_out, &i2s_rx_target_program);
     i2s_rx_target_program_init(*pio_out, *sm_out, offset, PIN_DIN, PIN_CLOCK_BASE);
 #endif

@@ -2,7 +2,7 @@
 #include "audio_config.h"
 #include "hardware/dma.h"
 #include "hardware/irq.h"
-#include "pico/sync.h"
+#include "hardware/sync.h"
 #include <stddef.h>
 
 // Raw Buffer Memory
