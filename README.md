@@ -61,11 +61,11 @@ Below is the default wiring guide for the Pico 2 and the PCM1808 ADC with an ext
 > [!NOTE]
 > If you are using a different ADC, you must consult its datasheet to find out how to configure it for Controller/Master Mode and Standard I2S Data Format.
 
-To configure the PCM1808 as the I2S Controller (Master) and to output standard I2S data format, set the following pins:
+To configure the PCM1808 as the I2S Controller and to output standard I2S data format, set the following pins:
 
 - Connect **FMT** (sometimes printed as FMY) to `GND` (I2S format).
-- Connect **MD0** to `3.3V` (Master mode, 256 fS).
-- Connect **MD1** to `GND` (Master mode, 256 fS).
+- Connect **MD0** to `3.3V` (Controller mode, 256 fS).
+- Connect **MD1** to `GND` (Controller mode, 256 fS).
 
 Once wired, plug the Pico into your computer. It will appear in your system audio settings as a USB input device.
 
@@ -150,15 +150,15 @@ Empirical testing of all four possible clock configurations (the 2×2 matrix of 
 
 | | **MCLK = External Oscillator** | **MCLK = Pico PWM** |
 | :--- | :--- | :--- |
-| **Pico = Target (ADC is Master)** | ✅ Validated (44.1 / 48 / 96 kHz) | ✅ Validated (44.1 / 48 / 96 kHz) |
-| **Pico = Controller (ADC is Slave)** | ❌ Guaranteed failure | ❌ Fails above 16 kHz |
+| **Pico = Target (ADC is Controller)** | ✅ Validated (44.1 / 48 / 96 kHz) | ✅ Validated (44.1 / 48 / 96 kHz) |
+| **Pico = Controller (ADC is Target)** | ❌ Guaranteed failure | ❌ Guaranteed failure |
 
 **The Pico cannot act as I2S Controller.** Both configurations where the Pico generates BCLK and LRCK fail:
 
 - **With external MCLK:** The Pico's PIO clocks and the external oscillator are physically independent clock domains with no synchronization. LRCK will inevitably drift against MCLK, causing the ADC to lose sync.
 - **With PWM MCLK:** The Pico's PWM (MCLK) and PIO (BCLK/LRCK) use independent fractional dividers of the same 150 MHz PLL. These accumulate phase error relative to each other, violating the ADC's requirement that BCLK and LRCK be coherently derived from MCLK.
 
-This firmware therefore locks `USE_CONTROLLER_MODE` to `0`. Setting it to `1` produces a compile-time error.
+This firmware therefore locks `USE_CONTROLLER_MODE` to `0`. Setting it to `1` produces a compile-time error. The file `i2s_rx_controller.pio` is therefore not used in this build, but is provided for reference.
 
 #### Target Mode with External Oscillator (Default — Recommended)
 
@@ -166,7 +166,7 @@ The external oscillator feeds MCLK directly into the ADC. The ADC divides it int
 
 #### Target Mode with PWM MCLK (No External Oscillator)
 
-Enable via `GENERATE_MCLK 1` in `src/audio_config.h`. The Pico generates a PWM square wave on `GPIO 12` at 256 × the configured sample rate and feeds it into the ADC as MCLK. The ADC runs in Master mode, deriving coherent BCLK and LRCK internally from this input, and sends them to the Pico.
+Enable via `GENERATE_MCLK 1` in `src/audio_config.h`. The Pico generates a PWM square wave on `GPIO 12` at 256 × the configured sample rate and feeds it into the ADC as MCLK. The ADC runs in Controller mode, deriving coherent BCLK and LRCK internally from this input, and sends them to the Pico.
 
 Although the PWM clock contains fractional-divider jitter (~6.67 ns cycle-to-cycle variation), the ADC's internal PLL is robust enough to tolerate it. This has been validated at 44.1 kHz, 48 kHz, and 96 kHz. This configuration requires no external oscillator hardware, at the cost of a small, measurable increase in clock noise.
 

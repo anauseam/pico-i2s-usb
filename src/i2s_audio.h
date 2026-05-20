@@ -2,7 +2,7 @@
 #define I2S_AUDIO_H
 
 #include "hardware/pio.h"
-#include "pico/stdlib.h"
+#include "pico/stdlib.h" // IWYU pragma: keep
 
 // Initializes the physical pins, clocks, and PIO state machines.
 // Populates pio_out and sm_out with the selected PIO instance and State Machine.
