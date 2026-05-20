@@ -1,19 +1,16 @@
 #include "usb_audio.h"
 #include "tusb.h"
 #include "audio_config.h"
+#include "usb_descriptors.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+
+#include "hardware/structs/usb.h"
+#include "hardware/regs/usb.h"
 
 void usb_audio_init(void) {
     // Initialize the TinyUSB stack
     tusb_init();
-
-    // Initialize diagnostic LED
-#ifdef PICO_DEFAULT_LED_PIN
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    gpio_put(PICO_DEFAULT_LED_PIN, 0);
-#endif
 }
 
 void usb_audio_task(void) {
@@ -29,9 +26,11 @@ void usb_audio_send_buffer(uint32_t *buffer, uint32_t size) {
 
     // Check if the host has opened the audio stream and is listening
     if (tud_audio_mounted()) {
-        // The magic 0-CPU trick! We just cast the 32-bit array to bytes
-        // and dump it straight into the USB FIFO. The UAC2 descriptors
-        // tell the PC exactly how to parse it.
+        // The zero-conversion trick! We just cast the 32-bit I2S array to bytes
+        // and copy it straight into the USB FIFO. The UAC2 descriptors
+        // tell the PC exactly how to parse the 32-bit containers, saving DSP CPU cycles.
+        // (Note: This is not '0-CPU' as it still requires a memory copy by tud_audio_write,
+        // but it avoids any mathematical format conversions).
         tud_audio_write((const uint8_t *)buffer, bytes_to_send);
     }
 }
@@ -41,7 +40,7 @@ void usb_audio_send_buffer(uint32_t *buffer, uint32_t size) {
 // Invoked when audio class specific get request received for an entity
 bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
     uint8_t ctrlSel = TU_U16_HIGH(p_request->wValue);
-    uint8_t entityID = TU_U16_HIGH(p_request->wIndex);
+    uint8_t entityID = TU_U16_HIGH(p_request->wIndex); // Correctly gets entity ID from upper byte
 
     // Clock Source unit (ID = 4)
     if (entityID == 4) {
@@ -81,7 +80,10 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
         }
     }
 
-    // Fallback: silently ACK unknown GET requests with 0 length
+    // Fallback: silently ACK unknown GET requests with 0 length.
+    // UAC2 semantically expects a STALL (return false) for unsupported features.
+    // However, we explicitly return 0-length data to prevent TinyUSB from issuing STALLs, 
+    // which currently lock up the RP2350 USB hardware peripheral.
     return tud_control_xfer(rhport, p_request, NULL, 0);
 }
 
@@ -90,7 +92,10 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
                                  uint8_t *buf) {
     (void)rhport;
     (void)buf;
-    // Accept all SET requests silently to prevent STALL
+    // Accept all SET requests silently to prevent STALL.
+    // NOTE: This intentionally swallows OS sample rate changes (SAM_FREQ) because 
+    // the I2S ADC hardware is fixed at a single rate (e.g. 48kHz). This is an 
+    // acceptable limitation for a fixed-rate capture device.
     return true;
 }
 
@@ -122,5 +127,20 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
     (void)rhport;
     (void)p_request;
+
+    // TinyUSB on RP2040/2350 skips closing ISO endpoints because of TUP_DCD_EDPT_ISO_ALLOC.
+    // If the host requests Alt 0, the hardware Buffer Control register is left with USB_BUF_CTRL_AVAIL set.
+    // When the host requests Alt 1 again, TinyUSB attempts to set AVAIL and panics ("ep 81 was already available").
+    // As a workaround, we manually clear the AVAIL and FULL bits for the audio endpoint.
+    uint8_t ep_num = EPNUM_AUDIO_IN & 0x7F;
+    uint32_t volatile *buf_ctrl = &usb_dpram->ep_buf_ctrl[ep_num].in;
+    
+    // Clear bits for both buffer 0 and buffer 1 (in case double buffering is ever enabled)
+    uint32_t mask = USB_BUF_CTRL_AVAIL | USB_BUF_CTRL_FULL;
+    *buf_ctrl &= ~(mask | (mask << 16));
+
+    // Note: TinyUSB's internal hw_endpoint_t struct has an 'active' flag that remains stale,
+    // but the IRQ handler will clear it gracefully, so this hardware workaround is sufficient.
+
     return true;
 }
