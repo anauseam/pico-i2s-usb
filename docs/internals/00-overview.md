@@ -50,18 +50,18 @@ Each architecture file is self-contained. `suspected-issues.md` is descriptive o
 
 ## Source-of-truth file map
 
-| Concern                           | File(s)                                  |
-| --------------------------------- | ---------------------------------------- |
-| Entry point / conductor loop      | `src/main.c`                             |
-| All user-tunable configuration    | `src/audio_config.h`                     |
-| PIO + clock setup                 | `src/i2s_audio.{c,h}`                    |
-| PIO programs                      | `src/i2s_rx_target.pio`, `src/i2s_rx_controller.pio` |
-| DMA ping-pong + ISR               | `src/dma_audio.{c,h}`                    |
-| TinyUSB callbacks + ep_in_ff submit | `src/usb_audio.{c,h}`                  |
-| USB descriptors + shared USB IDs  | `src/usb_descriptors.{c,h}`              |
-| TinyUSB stack config              | `src/tusb_config.h`                      |
-| Build                             | `CMakeLists.txt`, `pico_sdk_import.cmake`|
-| Format                            | `.clang-format`                          |
+| Concern                             | File(s)                                              |
+| ----------------------------------- | ---------------------------------------------------- |
+| Entry point / conductor loop        | `src/main.c`                                         |
+| All user-tunable configuration      | `src/audio_config.h`                                 |
+| PIO + clock setup                   | `src/i2s_audio.{c,h}`                                |
+| PIO programs                        | `src/i2s_rx_target.pio`, `src/i2s_rx_controller.pio` |
+| DMA ping-pong + ISR                 | `src/dma_audio.{c,h}`                                |
+| TinyUSB callbacks + ep_in_ff submit | `src/usb_audio.{c,h}`                                |
+| USB descriptors + shared USB IDs    | `src/usb_descriptors.{c,h}`                          |
+| TinyUSB stack config                | `src/tusb_config.h`                                  |
+| Build                               | `CMakeLists.txt`, `pico_sdk_import.cmake`            |
+| Format                              | `.clang-format`                                      |
 
 ## Core invariants (cross-cutting)
 

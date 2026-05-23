@@ -37,8 +37,6 @@ used only inside one `.c`) may stay as literals in that file.
 
 When in doubt, prefer promoting to a named constant.
 
-
-
 ## 4.4 — Sample rate and pin changes do not require rule updates
 
 Changing `SAMPLE_RATE` to another supported value (44100 / 48000 / 96000)
