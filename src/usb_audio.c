@@ -7,6 +7,11 @@
 #include "hardware/regs/usb.h"
 #include "hardware/structs/usb.h"
 
+// --- DIAGNOSTIC COUNTER ---
+// Incremented when usb_audio_submit_buffer drops a DMA buffer because the
+// TinyUSB ep_in_ff FIFO does not have room for the full write. See R2.6.
+static volatile uint32_t overflow_count = 0;
+
 void usb_audio_init(void) {
     // Initialize the TinyUSB stack
     tusb_init();
@@ -18,20 +23,40 @@ void usb_audio_task(void) {
     tud_task();
 }
 
-void usb_audio_send_buffer(uint32_t *buffer, uint32_t size) {
-    // Size is the number of 32-bit elements (256).
-    // We multiply by 4 to get total bytes (1024 bytes).
-    uint32_t bytes_to_send = size * 4;
-
-    // Check if the host has opened the audio stream and is listening
-    if (tud_audio_mounted()) {
-        // The zero-conversion trick! We just cast the 32-bit I2S array to bytes
-        // and copy it straight into the USB FIFO. The UAC2 descriptors
-        // tell the PC exactly how to parse the 32-bit containers, saving DSP CPU cycles.
-        // (Note: This is not '0-CPU' as it still requires a memory copy by tud_audio_write,
-        // but it avoids any mathematical format conversions).
-        tud_audio_write((const uint8_t *)buffer, bytes_to_send);
+void usb_audio_submit_buffer(uint32_t *buffer, uint32_t n_words) {
+    // If unplugged or not yet mounted, drop silently. Not counted as overflow
+    // because the cause is "no host", not "host is too slow".
+    if (!tud_audio_mounted()) {
+        return;
     }
+
+    // Byte length is always a multiple of 4 by construction (one 32-bit
+    // sample container per word). This is the structural defense against the
+    // byte/word alignment hazard that motivated this refactor (see R2.5).
+    uint16_t bytes = (uint16_t)(n_words * 4);
+
+    // Check room atomically (vs the TX side) BEFORE writing. If the full
+    // buffer does not fit, drop the entire buffer; never attempt a partial
+    // write. A partial write would split a 32-bit sample container across
+    // two USB packets at a byte-aligned but not word-aligned boundary,
+    // re-introducing exactly the bug we are fixing.
+    tu_fifo_t *ff = tud_audio_get_ep_in_ff();
+    if (ff == NULL || tu_fifo_remaining(ff) < bytes) {
+        overflow_count++;
+        return;
+    }
+
+    uint16_t written = tud_audio_write((const uint8_t *)buffer, bytes);
+    if (written != bytes) {
+        // Defensive: tu_fifo_remaining() said there was room. If we reach
+        // here it indicates a TinyUSB-internal inconsistency. Count it as
+        // an overflow event for visibility.
+        overflow_count++;
+    }
+}
+
+uint32_t usb_audio_get_overflow_count(void) {
+    return overflow_count;
 }
 
 // --- TINYUSB AUDIO CALLBACKS ---
@@ -41,8 +66,8 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
     uint8_t ctrlSel = TU_U16_HIGH(p_request->wValue);
     uint8_t entityID = TU_U16_HIGH(p_request->wIndex); // Correctly gets entity ID from upper byte
 
-    // Clock Source unit (ID = 4)
-    if (entityID == 4) {
+    // Clock Source unit
+    if (entityID == UAC2_ENTITY_CLOCK_SOURCE) {
         if (ctrlSel == AUDIO_CS_CTRL_SAM_FREQ) {
             if (p_request->bRequest == AUDIO_CS_REQ_CUR) {
                 static uint32_t sampFreq = SAMPLE_RATE;
@@ -59,8 +84,8 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
         }
     }
 
-    // Feature unit (ID = 2) - Dummy responses to keep host happy
-    if (entityID == 2) {
+    // Feature unit - Dummy responses to keep host happy
+    if (entityID == UAC2_ENTITY_FEATURE_UNIT) {
         if (ctrlSel == AUDIO_FU_CTRL_MUTE && p_request->bRequest == AUDIO_CS_REQ_CUR) {
             static uint8_t mute = 0;
             return tud_control_xfer(rhport, p_request, &mute, sizeof(mute));
@@ -79,7 +104,7 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
     // Fallback: silently ACK unknown GET requests with 0 length.
     // UAC2 semantically expects a STALL (return false) for unsupported features.
     // However, we explicitly return 0-length data to prevent TinyUSB from issuing STALLs,
-    // which currently lock up the RP2350 USB hardware peripheral.
+    // which currently lock up the RP2350 USB hardware peripheral. See R6.4.
     return tud_control_xfer(rhport, p_request, NULL, 0);
 }
 
@@ -90,8 +115,7 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
     (void)buf;
     // Accept all SET requests silently to prevent STALL.
     // NOTE: This intentionally swallows OS sample rate changes (SAM_FREQ) because
-    // the I2S ADC hardware is fixed at a single rate (e.g. 48kHz). This is an
-    // acceptable limitation for a fixed-rate capture device.
+    // the I2S ADC hardware is fixed at a single rate (see R3.6 / R6.4).
     return true;
 }
 
@@ -123,6 +147,11 @@ bool tud_audio_get_req_itf_cb(uint8_t rhport, tusb_control_request_t const *p_re
 bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
     (void)rhport;
     (void)p_request;
+    // No application-side stream state to reset on Alt change: the application
+    // owns no FIFO (see R2.5) and no streaming latch (see R2.6). TinyUSB's
+    // ep_in_ff is implicitly drained by host polling; whatever stale samples
+    // remain at Alt 1 entry will be flushed within a few frames at the
+    // current rate (~1500 bytes / 768 bytes/frame ≈ 2 ms of pre-roll).
     return true;
 }
 
@@ -130,11 +159,12 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const 
     (void)rhport;
     (void)p_request;
 
-    // TinyUSB on RP2040/2350 skips closing ISO endpoints because of TUP_DCD_EDPT_ISO_ALLOC.
-    // If the host requests Alt 0, the hardware Buffer Control register is left with
-    // USB_BUF_CTRL_AVAIL set. When the host requests Alt 1 again, TinyUSB attempts to set AVAIL and
-    // panics ("ep 81 was already available"). As a workaround, we manually clear the AVAIL and FULL
-    // bits for the audio endpoint.
+    // R6.5 workaround: TinyUSB on RP2040/2350 skips closing ISO endpoints because
+    // of TUP_DCD_EDPT_ISO_ALLOC. If the host requests Alt 0, the hardware Buffer
+    // Control register is left with USB_BUF_CTRL_AVAIL set. When the host
+    // requests Alt 1 again, TinyUSB attempts to set AVAIL and panics
+    // ("ep 81 was already available"). As a workaround, we manually clear the
+    // AVAIL and FULL bits for the audio endpoint.
     uint8_t ep_num = EPNUM_AUDIO_IN & 0x7F;
     uint32_t volatile *buf_ctrl = &usb_dpram->ep_buf_ctrl[ep_num].in;
 
