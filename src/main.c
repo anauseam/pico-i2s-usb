@@ -37,7 +37,8 @@ int main() {
         if (dma_audio_get_ready_buffer(&ready_buffer)) {
 
             // Immediately hand off to the Host Interface (writes directly into
-            // TinyUSB's ep_in_ff; see R2.5 / R2.6).
+            // TinyUSB's ep_in_ff).
+            // See docs/internals/02-audio-pipeline.md
             usb_audio_submit_buffer(ready_buffer, AUDIO_BUFFER_SIZE);
 
 #if AUDIO_DEBUG_LOGGING

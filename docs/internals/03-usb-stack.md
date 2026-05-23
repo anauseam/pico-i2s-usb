@@ -1,6 +1,6 @@
 # TinyUSB / UAC2 Contract
 
-## R3.1 — Module boundary for the USB stack
+## 3.1 — Module boundary for the USB stack
 
 - All `tud_audio_*` callbacks (entity GET/SET, EP GET/SET, ITF GET/SET,
   `tud_audio_tx_done_pre_load_cb`, `tud_audio_set_itf_cb`,
@@ -12,10 +12,10 @@
 - TinyUSB stack configuration macros (`CFG_TUD_*`, `CFG_TUSB_*`,
   `TUD_AUDIO_*_DESC_LEN`) live in `src/tusb_config.h`.
 
-## R3.2 — Shared USB contract constants live in `usb_descriptors.h`
+## 3.2 — Shared USB contract constants live in `usb_descriptors.h`
 
 Any integer that appears both in the descriptor table in
-`src/usb_descriptors.c` AND in a USB callback in `src/usb_audio.c` MUST be
+`src/usb_descriptors.c` AND in a USB callback in `src/usb_audio.c` should be
 defined as a macro in `src/usb_descriptors.h`. This includes:
 
 - USB endpoint addresses (e.g. `EPNUM_AUDIO_IN`).
@@ -27,14 +27,14 @@ defined as a macro in `src/usb_descriptors.h`. This includes:
 - Interface numbers when referenced from both sides.
 - String descriptor indices when referenced from both sides.
 
-Bare integer literals (e.g. `0x04`, `0x81`) for these contract values are
-FORBIDDEN in `usb_descriptors.c` and `usb_audio.c`. Use the macro names.
+Bare integer literals (e.g. `0x04`, `0x81`) for these contract values should
+be avoided in `usb_descriptors.c` and `usb_audio.c`. Use the macro names.
 
 Implementation-only literals that never cross this boundary (loop bounds,
 internal scratch buffer indices, the descriptor-internal `_ctrl`/`_attr`
 flag bytes) stay in their owning `.c` file.
 
-## R3.3 — Descriptor length is asserted
+## 3.3 — Descriptor length is asserted
 
 `src/usb_descriptors.c` contains:
 
@@ -43,43 +43,44 @@ static_assert(sizeof(desc_configuration) == TUD_CONFIG_DESC_LEN + TUD_AUDIO_MIC_
               "Descriptor length mismatch — update TUD_CONFIG_DESCRIPTOR total length");
 ```
 
-Any plan that adds, removes, or reorders descriptor blocks MUST update
+Any plan that adds, removes, or reorders descriptor blocks must update
 `TUD_AUDIO_MIC_TWO_CH_DESC_LEN` in `src/tusb_config.h` and the
 `TUD_CONFIG_DESCRIPTOR` total length argument so that this `static_assert`
-continues to hold. Removing the `static_assert` is forbidden.
+continues to hold.
 
-## R3.4 — Never STALL on the RP2350
+## 3.4 — Never STALL on the RP2350
 
-STALL responses on the RP2350 USB peripheral have been observed to lock
-the hardware. Every `tud_audio_*` control callback in `src/usb_audio.c`
-MUST return either:
+STALL responses on the RP2350 USB peripheral are suspected to lock
+the hardware based on historical association during development (see
+`suspected-issues.md`). Every `tud_audio_*` control callback in `src/usb_audio.c`
+should return either:
 
 - `true` (silent ACK for SET requests), or
 - `tud_control_xfer(rhport, p_request, NULL, 0)` (zero-length ACK for GET
   requests), or
 - `tud_control_xfer(...)` with real payload for supported entities.
 
-Returning `false` from a control callback (which makes TinyUSB STALL) is
-a violation. See `06-workarounds.md` R6.4 for the underlying reason.
+Returning `false` from a control callback (which makes TinyUSB STALL) will lock the device. See `suspected-issues.md`
+for background.
 
-## R3.5 — Endpoint reactivation workaround
+## 3.5 — Endpoint reactivation workaround
 
 `tud_audio_set_itf_close_EP_cb` in `src/usb_audio.c` manually clears the
 `USB_BUF_CTRL_AVAIL` and `USB_BUF_CTRL_FULL` bits in
 `usb_dpram->ep_buf_ctrl[ep_num].in` for the audio IN endpoint. This is
 the only sanctioned direct access to `usb_dpram` outside of TinyUSB
-itself. The clear MUST cover both buffer 0 and buffer 1 (shifted mask).
+itself. The clear should cover both buffer 0 and buffer 1 (shifted mask).
 
-Do not remove this callback. Do not duplicate this access pattern in
-other modules. See `06-workarounds.md` R6.5.
+This callback is necessary. Do not duplicate this access pattern in
+other modules. See `06-workarounds.md` (proven workaround).
 
-## R3.6 — Fixed-rate device
+## 3.6 — Fixed-rate device
 
 This firmware presents a single fixed sample rate. The `SET_CUR(SAM_FREQ)`
 request from the host is intentionally swallowed by
 `tud_audio_set_req_entity_cb` because the I2S ADC clock is hardware-fixed.
 
-If multi-rate support is added in the future, the plan MUST:
+If multi-rate support (e.g. supporting both 44.1kHz and 48kHz and allowing the host OS to switch between them) is added in the future, we should:
 
 1. Update `UAC2_ENTITY_CLOCK_SOURCE` GET handlers to advertise multiple
    `subrange` entries instead of a single fixed `bMin == bMax`.
@@ -87,6 +88,7 @@ If multi-rate support is added in the future, the plan MUST:
    in `i2s_audio.c` (via a new public API on that module) AND reconfigures
    the PWM MCLK divider when `GENERATE_MCLK` is set.
 3. Re-evaluate `CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL` — the rationale for
-   disabling it (see `06-workarounds.md` R6.3) may no longer apply.
+   disabling it (see `06-workarounds.md`)
+   may no longer apply.
 
 Until all three are done, the swallow-SET behaviour stays.

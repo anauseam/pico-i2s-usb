@@ -7,16 +7,7 @@
 #include <stdio.h>
 
 // The Pico C/C++ SDK automatically generates these headers from your .pio files
-#if USE_CONTROLLER_MODE
-#include "i2s_rx_controller.pio.h"
-#else
 #include "i2s_rx_target.pio.h"
-#endif
-
-#if GENERATE_MCLK && (SAMPLE_RATE > 16000)
-#warning                                                                                           \
-    "PWM MCLK above 16kHz is empirically unreliable on RP2350 due to fractional divider jitter. Use an external clock source or custom board with 24.576MHz crystal for production use."
-#endif
 
 #if GENERATE_MCLK
 static void setup_mclk_pwm(uint gpio) {
@@ -49,24 +40,15 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
     setup_mclk_pwm(PIN_MCLK);
 #endif
 
-#if USE_CONTROLLER_MODE
-    printf("Starting I2S as CONTROLLER (Targeting %d Hz)...\n", SAMPLE_RATE);
-    offset = pio_add_program(*pio_out, &i2s_rx_controller_program);
-    i2s_rx_controller_program_init(*pio_out, *sm_out, offset, PIN_DIN, PIN_CLOCK_BASE);
-
-    float pio_freq = (float)SAMPLE_RATE * 64.0f * 2.0f;
-    float clkdiv = (float)clock_get_hz(clk_sys) / pio_freq;
-    pio_sm_set_clkdiv(*pio_out, *sm_out, clkdiv);
-#else
     printf("Starting I2S as TARGET (Expecting %d Hz from master)...\n", SAMPLE_RATE);
 
     // ARCHITECTURAL LIMITATION: Currently, there is no documented recovery path or
     // watchdog for the PIO state machine if a BCLK/LRCK glitch causes frame misalignment.
     // If the external clock stutters, the SM may permanently offset the 32-bit frames.
+    // Background: see docs/internals/suspected-issues.md#pio-frame-misalignment-recovery
 
     offset = pio_add_program(*pio_out, &i2s_rx_target_program);
     i2s_rx_target_program_init(*pio_out, *sm_out, offset, PIN_DIN, PIN_CLOCK_BASE);
-#endif
 }
 
 void i2s_audio_start(PIO pio, uint sm) {

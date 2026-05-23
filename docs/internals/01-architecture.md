@@ -1,6 +1,6 @@
 # Architecture & Module Boundaries
 
-## R1.1 — `main.c` is the only conductor
+## 1.1 — `main.c` is the only conductor
 
 `src/main.c` is the **only** translation unit allowed to call functions from
 more than one of the audio/USB modules. Specifically, only `main.c` may call
@@ -11,10 +11,10 @@ functions from two or more of:
 - `usb_audio.h`
 - `usb_descriptors.h`
 
-A plan that introduces orchestration logic (start/stop, buffer hand-off,
-state-machine sequencing) anywhere other than `src/main.c` violates this rule.
+To avoid spaghetti architecture, please do not introduce orchestration logic (start/stop, buffer hand-off,
+state-machine sequencing) anywhere other than `src/main.c`.
 
-## R1.2 — Strict peripheral ownership
+## 1.2 — Strict peripheral ownership
 
 Each hardware peripheral is owned by exactly one module. No other module may
 touch its registers, claim its channels, install its IRQ handlers, or call its
@@ -35,7 +35,7 @@ Adding a new peripheral requires a new module pair (`<name>.c` + `<name>.h`)
 plus a new entry in `CMakeLists.txt`. Do not extend an existing module to
 cover a second peripheral.
 
-## R1.3 — No cross-module header includes
+## 1.3 — No cross-module header includes
 
 A `.c` file may include:
 
@@ -45,7 +45,7 @@ A `.c` file may include:
 - Pico SDK / TinyUSB headers.
 - C standard library headers.
 
-A `.c` file MUST NOT include another module's header to call into it.
+A `.c` file should avoid including another module's header just to call into it.
 Inter-module data hand-off goes through `main.c`:
 
 - `i2s_audio_init` returns `PIO` + `sm` to `main.c`.
@@ -55,9 +55,9 @@ Inter-module data hand-off goes through `main.c`:
 
 This is the only sanctioned data-flow topology.
 
-## R1.4 — Headers are guarded and minimal
+## 1.4 — Headers are guarded and minimal
 
-Every `.h` file in `src/` MUST use the include-guard form:
+Every `.h` file in `src/` should use the include-guard form:
 
 ```c
 #ifndef MODULE_NAME_H
@@ -66,13 +66,13 @@ Every `.h` file in `src/` MUST use the include-guard form:
 #endif // MODULE_NAME_H
 ```
 
-`#pragma once` is forbidden (for consistency with the existing codebase).
+`#pragma once` is avoided (for consistency with the existing codebase).
 
 Headers expose only the public API surface of their module. File-scope
 `static` state stays in the `.c` file. Do not put implementation details
 (buffer arrays, ISR functions, FIFO structs) in headers.
 
-## R1.5 — One translation unit = one module
+## 1.5 — One translation unit = one module
 
 Do not split a module across multiple `.c` files (e.g. `dma_audio_init.c` +
 `dma_audio_isr.c`). One `.c`, one `.h`, one entry in `CMakeLists.txt`.
