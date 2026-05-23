@@ -28,12 +28,12 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(pico-i2s-usb C CXX ASM)
+project(pico-i2s-usb VERSION 0.1.0 LANGUAGES C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Add executable. Default name is the project name, version 0.1
+# Add executable. Default name is the project name, version 0.1.0
 
 add_executable(pico-i2s-usb 
     src/main.c 
@@ -44,10 +44,12 @@ add_executable(pico-i2s-usb
 )
 
 pico_set_program_name(pico-i2s-usb "pico-i2s-usb")
-pico_set_program_version(pico-i2s-usb "0.1")
+pico_set_program_version(pico-i2s-usb "${PROJECT_VERSION}")
 
-# Generate PIO headers
-pico_generate_pio_header(pico-i2s-usb ${CMAKE_CURRENT_LIST_DIR}/src/i2s_rx_controller.pio)
+# Generate PIO headers.
+# Note: i2s_rx_controller.pio is retained on disk as an educational artifact
+# (see README "Clock Architecture") but is intentionally NOT built — the Pico
+# cannot reliably act as I2S Controller on this hardware.
 pico_generate_pio_header(pico-i2s-usb ${CMAKE_CURRENT_LIST_DIR}/src/i2s_rx_target.pio)
 
 # Modify the below lines to enable/disable output over UART/USB

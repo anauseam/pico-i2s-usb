@@ -12,7 +12,8 @@ void usb_audio_task(void);
 // Hands one full DMA buffer (n_words 32-bit samples, byte length must be a
 // multiple of 4 by construction) to TinyUSB's ep_in_ff in a single write.
 // Drops the entire buffer if ep_in_ff does not have room for the full write;
-// partial writes are NEVER attempted (see R2.5 / R2.6).
+// partial writes are NEVER attempted.
+// See docs/internals/02-audio-pipeline.md
 void usb_audio_submit_buffer(uint32_t *buffer, uint32_t n_words);
 
 // Returns the running count of DMA buffers dropped because ep_in_ff was full

@@ -5,45 +5,18 @@
 // VALIDATED CLOCK CONFIGURATION
 // =============================================================================
 //
-// Empirical testing has established that the Pico acting as I2S Controller
-// (generating BCLK/LRCK) is never viable. Both Controller configurations fail:
+// The Pico is ALWAYS the I2S Target. The ADC is ALWAYS the I2S Controller.
+// Configure GENERATE_MCLK below depending on whether your hardware has an
+// external oscillator feeding the ADC's MCLK pin (GENERATE_MCLK=0) or whether
+// the Pico itself must generate MCLK via PWM (GENERATE_MCLK=1).
 //
-//   CONTROLLER=1, MCLK=1 (Pico generates everything):
-//     The PWM (MCLK) and PIO (BCLK/LRCK) use independent fractional dividers
-//     of the 150 MHz PLL. These accumulate phase error relative to each other,
-//     violating the PCM1808's requirement that BCLK/LRCK be coherently derived
-//     from MCLK. Fails at all sample rates above 16 kHz.
-//
-//   CONTROLLER=1, MCLK=0 (Pico drives clocks, ADC drives MCLK):
-//     The Pico's PLL and the external oscillator are physically independent
-//     clock domains. LRCK will inevitably drift against MCLK. Guaranteed
-//     hardware failure at all sample rates.
-//
-// The two VALID configurations (CONTROLLER=0) are:
-//
-//   CONTROLLER=0, MCLK=0  [DEFAULT - recommended for production]
-//     External oscillator -> ADC (Master) -> Pico (Target).
-//     All clocks trace to a single pristine source. Validated: 44.1/48/96 kHz.
-//
-//   CONTROLLER=0, MCLK=1  [Alternative - no external oscillator required]
-//     Pico PWM -> ADC (Master) -> Pico (Target).
-//     ADC derives coherent BCLK/LRCK internally from the jittery MCLK, which
-//     it tolerates. Validated: 44.1/48/96 kHz.
+// For the full historical rationale (why Pico-as-Controller is infeasible
+// and which configurations were empirically tested), see ARCHITECTURE.md and
+// the "Clock Architecture" section of README.md.
 //
 // =============================================================================
 
 // --- CONFIGURATION ---
-
-// The Pico always acts as the I2S Target (Slave). The ADC is always the Master.
-// DO NOT SET THIS TO 1. See note above.
-#define USE_CONTROLLER_MODE 0
-
-#if USE_CONTROLLER_MODE
-#error "USE_CONTROLLER_MODE=1 is not a valid configuration. Both Controller " \
-    "states (MCLK=0 and MCLK=1) have been empirically validated to fail. " \
-    "Set USE_CONTROLLER_MODE to 0 and configure the ADC as I2S Master. " \
-    "See audio_config.h for the full explanation."
-#endif
 
 // Set to 1 to enable diagnostic UART printing in the main conductor loop.
 // WARNING: High frequency printing can cause USB buffer starvation and audio glitches.

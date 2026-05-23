@@ -9,9 +9,17 @@ This repository contains bare-metal C firmware that turns a Raspberry Pi Pico 2 
 It reads standard I2S digital audio data from an external ADC (such as the PCM1808 or TAA5242) and streams it to a host computer over USB using the USB Audio Class 2.0 (UAC2) standard. The host (Windows, macOS, or Linux) recognizes the Pico as a standard USB microphone or line-in device — no drivers required.
 
 > [!NOTE]
-> **Windows Compatibility**
+> **Host OS Compatibility**
 > UAC2 is natively supported (driverless) on **macOS**, **Linux**, and **Windows 11**.
 > **Windows 10 and earlier** require a third-party UAC2 driver. If broad Windows compatibility is a hard requirement, consider reworking the descriptors to target UAC1.
+>
+> **Tested on Linux.** Compatibility with macOS and Windows 11 follows from
+> UAC2 standard compliance and is reported to work by users but has not been
+> formally tested by the maintainer.
+
+For the design rationale and open observations, see
+[ARCHITECTURE.md](ARCHITECTURE.md). For contribution guidelines, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Quick Start
 
@@ -158,7 +166,10 @@ Empirical testing of all four possible clock configurations (the 2×2 matrix of 
 - **With external MCLK:** The Pico's PIO clocks and the external oscillator are physically independent clock domains with no synchronization. LRCK will inevitably drift against MCLK, causing the ADC to lose sync.
 - **With PWM MCLK:** The Pico's PWM (MCLK) and PIO (BCLK/LRCK) use independent fractional dividers of the same 150 MHz PLL. These accumulate phase error relative to each other, violating the ADC's requirement that BCLK and LRCK be coherently derived from MCLK.
 
-This firmware therefore locks `USE_CONTROLLER_MODE` to `0`. Setting it to `1` produces a compile-time error. The file `i2s_rx_controller.pio` is therefore not used in this build, but is provided for reference.
+This firmware therefore hard-codes the Pico to Target mode. The file
+`src/i2s_rx_controller.pio` is retained on disk as an educational reference
+showing what a Pico-as-Controller PIO program looks like, but it is no
+longer compiled into the build.
 
 #### Target Mode with External Oscillator (Default — Recommended)
 
@@ -180,19 +191,27 @@ pico-i2s-usb/
     ├── main.c                      # Entry point and conductor loop
     ├── audio_config.h              # All configuration (pins, sample rate, modes, debug)
     ├── i2s_audio.c / .h            # PIO initialization, clock setup, MCLK PWM
-    ├── i2s_rx_controller.pio       # PIO program: Controller mode (generates BCLK/LRCK)
+    ├── i2s_rx_controller.pio       # PIO program: Controller mode (educational, NOT built)
     ├── i2s_rx_target.pio           # PIO program: Target mode (receives external clocks)
     ├── dma_audio.c / .h            # DMA ping-pong buffer management and ISR
-    ├── usb_audio.c / .h            # TinyUSB callbacks, USB packet handling, RP2350 workarounds
+    ├── usb_audio.c / .h            # TinyUSB callbacks, direct ep_in_ff submission,
+    │                               # RP2350 workarounds
     ├── usb_descriptors.c / .h      # UAC2 device, configuration, and string descriptors
     └── tusb_config.h               # TinyUSB stack configuration and RP2350 alignment fixes
 ```
 
-All user-configurable options (I2S mode, pin assignments, sample rate, MCLK toggle, buffer size, debug logging) are centralized in `src/audio_config.h`.
+All user-configurable options (pin assignments, sample rate, MCLK toggle,
+buffer size, debug logging) are centralized in `src/audio_config.h`.
 
 ### Debugging
 
-Set `AUDIO_DEBUG_LOGGING` to `1` in `src/audio_config.h` to enable periodic UART logging of raw I2S sample values in the main loop. When enabled, one line is printed approximately every 1.3 seconds to minimize impact on the real-time audio path.
+Set `AUDIO_DEBUG_LOGGING` to `1` in `src/audio_config.h` to enable periodic
+UART logging of raw I2S sample values in the main loop. When enabled, one
+line is printed approximately every 1.3 seconds to minimize impact on the
+real-time audio path. The log line also includes a running `overflow=N`
+counter — the number of DMA buffers dropped because TinyUSB's `ep_in_ff`
+could not accept them. A healthy stream holds at zero or stays in single
+digits over many minutes.
 
 UART output is routed to the default SDK UART pins. Connect a USB-to-serial adapter or a Raspberry Pi Debug Probe to read the output.
 

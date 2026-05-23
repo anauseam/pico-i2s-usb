@@ -1,0 +1,46 @@
+name: Build and Release UF2
+
+on:
+  workflow_dispatch: # Allows you to manually trigger the workflow from the GitHub Actions tab for testing
+  push:
+    tags:
+      - 'v*' # Trigger this workflow whenever a tag starting with 'v' is pushed (e.g. v0.1.0)
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to create a release and upload assets
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Install ARM GNU Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential cmake ninja-build
+
+      - name: Setup Raspberry Pi Pico SDK
+        run: |
+          # The project uses Pico SDK 2.2.0 (from CMakeLists.txt)
+          git clone --depth 1 --branch 2.2.0 https://github.com/raspberrypi/pico-sdk.git
+          cd pico-sdk
+          git submodule update --init
+          echo "PICO_SDK_PATH=$(pwd)" >> $GITHUB_ENV
+
+      - name: Build Project
+        run: |
+          cmake -B build -G Ninja
+          cmake --build build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            build/*.uf2
+            build/*.elf
+            build/*.hex
+          generate_release_notes: true

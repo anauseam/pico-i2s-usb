@@ -36,23 +36,27 @@ uint8_t const *tud_descriptor_device_cb(void) {
                 TUD_AUDIO_DESC_OUTPUT_TERM_LEN + TUD_AUDIO_DESC_FEATURE_UNIT_TWO_CHANNEL_LEN,      \
             /*_ctrl*/ AUDIO_CS_AS_INTERFACE_CTRL_LATENCY_POS), /* Clock Source Descriptor(4.7.2.1) \
                                                                 */                                 \
-        TUD_AUDIO_DESC_CLK_SRC(/*_clkid*/ 0x04, /*_attr*/ AUDIO_CLOCK_SOURCE_ATT_INT_FIX_CLK,      \
+        TUD_AUDIO_DESC_CLK_SRC(/*_clkid*/ UAC2_ENTITY_CLOCK_SOURCE,                                \
+                               /*_attr*/ AUDIO_CLOCK_SOURCE_ATT_INT_FIX_CLK,                       \
                                /*_ctrl*/ (AUDIO_CTRL_R << AUDIO_CLOCK_SOURCE_CTRL_CLK_FRQ_POS),    \
-                               /*_assocTerm*/ 0x01,                                                \
+                               /*_assocTerm*/ UAC2_ENTITY_INPUT_TERMINAL,                          \
                                /*_stridx*/ 0x00), /* Input Terminal Descriptor(4.7.2.4) */         \
         TUD_AUDIO_DESC_INPUT_TERM(                                                                 \
-            /*_termid*/ 0x01, /*_termtype*/ AUDIO_TERM_TYPE_IN_GENERIC_MIC, /*_assocTerm*/ 0x03,   \
-            /*_clkid*/ 0x04, /*_nchannelslogical*/ 0x02,                                           \
+            /*_termid*/ UAC2_ENTITY_INPUT_TERMINAL, /*_termtype*/ AUDIO_TERM_TYPE_IN_GENERIC_MIC,  \
+            /*_assocTerm*/ UAC2_ENTITY_OUTPUT_TERMINAL, /*_clkid*/ UAC2_ENTITY_CLOCK_SOURCE,       \
+            /*_nchannelslogical*/ 0x02,                                                            \
             /*_channelcfg*/ (AUDIO_CHANNEL_CONFIG_FRONT_LEFT | AUDIO_CHANNEL_CONFIG_FRONT_RIGHT),  \
             /*_idxchannelnames*/ 0x00, /*_ctrl*/ AUDIO_CTRL_NONE,                                  \
             /*_stridx*/ 0x00), /* Output Terminal Descriptor(4.7.2.5) */                           \
-        TUD_AUDIO_DESC_OUTPUT_TERM(/*_termid*/ 0x03, /*_termtype*/ AUDIO_TERM_TYPE_USB_STREAMING,  \
-                                   /*_assocTerm*/ 0x01, /*_srcid*/ 0x02, /*_clkid*/ 0x04,          \
-                                   /*_ctrl*/ 0x0000,                                               \
-                                   /*_stridx*/ 0x00), /* Feature Unit Descriptor(4.7.2.8) */       \
+        TUD_AUDIO_DESC_OUTPUT_TERM(                                                                \
+            /*_termid*/ UAC2_ENTITY_OUTPUT_TERMINAL, /*_termtype*/ AUDIO_TERM_TYPE_USB_STREAMING,  \
+            /*_assocTerm*/ UAC2_ENTITY_INPUT_TERMINAL, /*_srcid*/ UAC2_ENTITY_FEATURE_UNIT,        \
+            /*_clkid*/ UAC2_ENTITY_CLOCK_SOURCE, /*_ctrl*/ 0x0000,                                 \
+            /*_stridx*/ 0x00), /* Feature Unit Descriptor(4.7.2.8) */                              \
         TUD_AUDIO_DESC_FEATURE_UNIT_TWO_CHANNEL(                                                   \
-            /*_unitid*/ 0x02, /*_srcid*/ 0x01, /*_ctrlch0master*/ AUDIO_CTRL_NONE,                 \
-            /*_ctrlch1*/ AUDIO_CTRL_NONE, /*_ctrlch2*/ AUDIO_CTRL_NONE, /*_stridx*/ 0x00),         \
+            /*_unitid*/ UAC2_ENTITY_FEATURE_UNIT, /*_srcid*/ UAC2_ENTITY_INPUT_TERMINAL,           \
+            /*_ctrlch0master*/ AUDIO_CTRL_NONE, /*_ctrlch1*/ AUDIO_CTRL_NONE,                      \
+            /*_ctrlch2*/ AUDIO_CTRL_NONE, /*_stridx*/ 0x00),                                       \
         /* Standard AS Interface Descriptor(4.9.1) */ /* Interface 1,                              \
                                                          Alternate 0 -                             \
                                                          default alternate                         \
@@ -69,8 +73,9 @@ uint8_t const *tud_descriptor_device_cb(void) {
             /*_itfnum*/ (uint8_t)((_itfnum) + 1), /*_altset*/ 0x01, /*_nEPs*/ 0x01,                \
             /*_stridx*/ 0x00), /* Class-Specific AS Interface Descriptor(4.9.2) */                 \
         TUD_AUDIO_DESC_CS_AS_INT(                                                                  \
-            /*_termid*/ 0x03, /*_ctrl*/ AUDIO_CTRL_NONE, /*_formattype*/ AUDIO_FORMAT_TYPE_I,      \
-            /*_formats*/ AUDIO_DATA_FORMAT_TYPE_I_PCM, /*_nchannelsphysical*/ 0x02,                \
+            /*_termid*/ UAC2_ENTITY_OUTPUT_TERMINAL, /*_ctrl*/ AUDIO_CTRL_NONE,                    \
+            /*_formattype*/ AUDIO_FORMAT_TYPE_I, /*_formats*/ AUDIO_DATA_FORMAT_TYPE_I_PCM,        \
+            /*_nchannelsphysical*/ 0x02,                                                           \
             /*_channelcfg*/ (AUDIO_CHANNEL_CONFIG_FRONT_LEFT | AUDIO_CHANNEL_CONFIG_FRONT_RIGHT),  \
             /*_stridx*/ 0x00), /* Type I Format Type Descriptor(2.3.1.6 - Audio Formats) */        \
         TUD_AUDIO_DESC_TYPE_I_FORMAT(_nBytesPerSample,                                             \
