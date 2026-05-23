@@ -119,8 +119,8 @@ These would all be application-level rate-matching code that would fight
 TinyUSB's implicit rate signal.
 
 If a future host is observed to *not* properly average packet sizes
-(i.e. it requires an explicit feedback EP), please avoid adding an application-side 
-workaround for rate matching. The preferred solution would be to add feedback-EP-for-IN 
+(i.e. it requires an explicit feedback EP), please avoid adding an application-side
+workaround for rate matching. The preferred solution would be to add feedback-EP-for-IN
 support to the USB stack instead.
 
 ## 2.7 — Sample format is fixed by descriptors

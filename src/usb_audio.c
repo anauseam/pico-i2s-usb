@@ -1,11 +1,10 @@
 #include "usb_audio.h"
 #include "audio_config.h"
-#include "pico/stdlib.h"
 #include "tusb.h"
 #include "usb_descriptors.h"
 
-#include "hardware/regs/usb.h"
-#include "hardware/structs/usb.h"
+#include "hardware/regs/usb.h"    // IWYU pragma: keep
+#include "hardware/structs/usb.h" // IWYU pragma: keep
 
 // --- DIAGNOSTIC COUNTER ---
 // Incremented when usb_audio_submit_buffer drops a DMA buffer because the

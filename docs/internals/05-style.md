@@ -41,8 +41,6 @@ in transitively but whose explicit `#include` documents intent.
 Removing these pragmas or the headers they protect should be avoided unless
 the plan explicitly justifies it.
 
-
-
 ## 5.5 — Concurrency annotations
 
 State that is written from one execution context (ISR, USB callback) and

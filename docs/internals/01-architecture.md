@@ -20,16 +20,16 @@ Each hardware peripheral is owned by exactly one module. No other module may
 touch its registers, claim its channels, install its IRQ handlers, or call its
 SDK setup functions.
 
-| Peripheral / SDK area                     | Owner module                          |
-| ----------------------------------------- | ------------------------------------- |
-| PIO state machines (`pio0`, `pio1`)       | `src/i2s_audio.{c,h}`                 |
-| `hardware_pwm` (when used for MCLK)       | `src/i2s_audio.{c,h}`                 |
-| `clock_get_hz(clk_sys)` / clock config    | `src/i2s_audio.{c,h}`                 |
-| DMA channels, `DMA_IRQ_0`, `dma_hw->ints0`| `src/dma_audio.{c,h}`                 |
-| TinyUSB stack init (`tusb_init`, `tud_task`) | `src/usb_audio.{c,h}`              |
-| All `tud_audio_*` callbacks               | `src/usb_audio.{c,h}`                 |
-| All USB descriptor tables and `tud_descriptor_*_cb` | `src/usb_descriptors.{c,h}` |
-| RP2350 USB DPRAM access (`usb_dpram->...`) | `src/usb_audio.{c,h}` (workaround only) |
+| Peripheral / SDK area                               | Owner module                            |
+| --------------------------------------------------- | --------------------------------------- |
+| PIO state machines (`pio0`, `pio1`)                 | `src/i2s_audio.{c,h}`                   |
+| `hardware_pwm` (when used for MCLK)                 | `src/i2s_audio.{c,h}`                   |
+| `clock_get_hz(clk_sys)` / clock config              | `src/i2s_audio.{c,h}`                   |
+| DMA channels, `DMA_IRQ_0`, `dma_hw->ints0`          | `src/dma_audio.{c,h}`                   |
+| TinyUSB stack init (`tusb_init`, `tud_task`)        | `src/usb_audio.{c,h}`                   |
+| All `tud_audio_*` callbacks                         | `src/usb_audio.{c,h}`                   |
+| All USB descriptor tables and `tud_descriptor_*_cb` | `src/usb_descriptors.{c,h}`             |
+| RP2350 USB DPRAM access (`usb_dpram->...`)          | `src/usb_audio.{c,h}` (workaround only) |
 
 Adding a new peripheral requires a new module pair (`<name>.c` + `<name>.h`)
 plus a new entry in `CMakeLists.txt`. Do not extend an existing module to
