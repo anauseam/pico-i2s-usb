@@ -15,6 +15,9 @@ obj/
 !.vscode/extensions.json
 .cache/
 compile_commands.json
+.clineignore
+plan.md
+reference/
 
 # --- OS Specific ---
 .DS_Store

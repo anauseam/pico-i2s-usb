@@ -36,14 +36,16 @@ int main() {
         // Poll the Buffer Manager
         if (dma_audio_get_ready_buffer(&ready_buffer)) {
 
-            // Immediately hand off to the Host Interface!
-            usb_audio_send_buffer(ready_buffer, AUDIO_BUFFER_SIZE);
+            // Immediately hand off to the Host Interface (writes directly into
+            // TinyUSB's ep_in_ff; see R2.5 / R2.6).
+            usb_audio_submit_buffer(ready_buffer, AUDIO_BUFFER_SIZE);
 
 #if AUDIO_DEBUG_LOGGING
             // Print occasionally for debug verification.
             // 500 buffers * ~2.66ms = ~1.3 seconds per print
             if (++print_divider % 500 == 0) {
-                printf("[Audio Data] L: 0x%08X | R: 0x%08X\n", ready_buffer[0], ready_buffer[1]);
+                printf("[Audio Data] L: 0x%08X | R: 0x%08X | overflow=%u\n", ready_buffer[0],
+                       ready_buffer[1], (unsigned)usb_audio_get_overflow_count());
             }
 #endif
         }
