@@ -10,9 +10,7 @@ do if a future maintainer demonstrates the suspicion is unfounded.
 
 Docs in `docs/internals/` may cite entries here as background. The constraint
 itself stands on its own — refuting an entry here does NOT automatically
-invalidate a constraint that cross-references it. See `03-usb-stack.md`
-for an example: 3.4 ("never STALL") is binding regardless of whether the
-underlying RP2350 lockup is ever reproduced.
+invalidate a constraint that cross-references it.
 
 ---
 
@@ -34,6 +32,8 @@ per-transfer log output over the UART. The cost of those `printf`s blocks
 `tud_task()` for long enough to starve the audio IN stream — the host
 observes audio arriving at a fraction of its expected rate (e.g. visible
 in Audacity as the recording timeline advancing slower than wall-clock).
+To be clear: this is **not a bug** in TinyUSB, but rather a strict latency
+concern we enforce to protect the pipeline.
 
 **Why we suspect it:** The performance characteristics of `printf` over
 UART on the RP2350 (115200 baud, single-buffered) make blocking-time-per-
@@ -48,88 +48,6 @@ non-zero value through compiler flags.
 representative host, the `#undef`/`#define` block can be removed and
 `CFG_TUSB_DEBUG` can be left to whatever the SDK or build system sets.
 Until then the block stays in `tusb_config.h`.
-
----
-
-## `tu_static` alignment on RISC-V {#tu-static-alignment-on-riscv}
-
-**Location:** `src/tusb_config.h` (the `#undef tu_static` block).
-
-**Code excerpt:**
-
-```c
-#undef tu_static
-#define tu_static static __attribute__((aligned(4)))
-```
-
-**What we suspect:** TinyUSB declares several internal byte arrays (e.g.
-`ctrl_buf_1`) via `tu_static`. The default GCC alignment for `uint8_t[]`
-is 1-byte. On the RP2350's RISC-V cores, `tu_memcpy_s` is implemented as
-32-bit load/store instructions during UAC2 control requests (such as the
-host's `SET_CUR(SAM_FREQ)`). Unaligned 32-bit accesses on RISC-V can
-trap depending on the core's misaligned-access support. Forcing 4-byte
-alignment on every `tu_static` declaration sidesteps the trap.
-
-**Why we suspect it:** Plausible from RISC-V architectural conventions
-and inspection of the `tu_memcpy_s` implementation. No concrete crash
-captured in the commit history. The workaround was added defensively.
-
-**Reproduction status:** Unverified. The codebase has run on the RP2350
-RISC-V cores without crashes since the override was added; we cannot
-distinguish "the override is necessary" from "we got lucky with the
-specific bytes being copied happening to be naturally aligned."
-
-**Action if refuted:** If a future maintainer can demonstrate that the
-default GCC alignment is sufficient on the RP2350 (for instance by
-removing the override and running an extended UAC2 control-request
-fuzz against the device), the `#undef`/`#define tu_static` block can
-be removed.
-
----
-
-## STALL responses and RP2350 USB lockup {#stall-and-rp2350-lockup}
-
-**Location:** `src/usb_audio.c`, all `tud_audio_*_req_*_cb` functions.
-
-**Code excerpt:**
-
-```c
-// In tud_audio_get_req_entity_cb:
-return tud_control_xfer(rhport, p_request, NULL, 0);  // zero-length ACK
-
-// In tud_audio_set_req_entity_cb (also tud_audio_set_req_ep_cb,
-// tud_audio_set_req_itf_cb):
-return true;  // silent ACK
-```
-
-**What we suspect:** Returning `false` from a UAC2 control callback
-causes TinyUSB to issue a STALL on endpoint 0. STALL responses on the
-RP2350 USB peripheral have been associated with the device entering a
-state from which it cannot recover (no further control transfers
-succeed; only a power-cycle restores function).
-
-**Why we suspect it:** Early development was punctuated by hangs that
-coincided with specific UAC2 host requests; converting all callbacks
-to return ACK rather than `false` made the hangs go away. The exact
-causal chain is not confirmed.
-
-**Why the rule stands regardless:** The semantically-correct UAC2
-behavior for unsupported features is STALL, but a zero-length ACK is
-also acceptable to all tested hosts (Linux, macOS reportedly, Windows 11
-reportedly). The cost of the workaround is "the device claims to
-support features it doesn't actually implement"; the benefit (if the
-suspicion is real) is "no lockup." We accept the trade. This is why
-`03-usb-stack.md` says to avoid STALL regardless of whether
-the suspected lockup is ever reproduced.
-
-**Reproduction status:** Suspected by historical association during
-development. No clean repro in the current codebase.
-
-**Action if refuted:** If a future maintainer can demonstrate that
-returning `false` from a control callback does not lock up the RP2350
-USB peripheral, 3.4 can be relaxed and unsupported features can
-return `false` (the semantically-correct UAC2 behavior). Until then,
-all callbacks ACK.
 
 ---
 

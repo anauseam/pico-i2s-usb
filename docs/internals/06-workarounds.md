@@ -7,8 +7,7 @@ message to explicitly cite the upstream fix (Pico SDK / TinyUSB version
 and PR/issue number) that makes the workaround unnecessary.
 
 For *suspected-but-unreproduced* defensive code (the `CFG_TUSB_DEBUG=0`
-override, the `tu_static` alignment override, STALL avoidance, and the
-PIO frame-misalignment limitation), see
+override, and the PIO frame-misalignment limitation), see
 `suspected-issues.md`.
 
 ## 6.1 — `CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL = 0`
