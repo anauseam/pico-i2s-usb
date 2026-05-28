@@ -103,13 +103,9 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
         }
     }
 
-    // Fallback: silently ACK unknown GET requests with 0 length.
+    // Fallback: STALL unknown GET requests.
     // UAC2 semantically expects a STALL (return false) for unsupported features.
-    // However, we explicitly return 0-length data to prevent TinyUSB from issuing STALLs,
-    // which currently lock up the RP2350 USB hardware peripheral.
-    // See docs/internals/03-usb-stack.md;
-    //     docs/internals/suspected-issues.md#stall-and-rp2350-lockup
-    return tud_control_xfer(rhport, p_request, NULL, 0);
+    return false;
 }
 
 // Invoked when audio class specific set request received for an entity
@@ -117,37 +113,10 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
                                  uint8_t *buf) {
     (void)rhport;
     (void)buf;
-    // Accept all SET requests silently to prevent STALL.
-    // NOTE: This intentionally swallows OS sample rate changes (SAM_FREQ) because
+    // STALL all unsupported SET requests.
+    // NOTE: This correctly rejects OS sample rate changes (SAM_FREQ) because
     // the I2S ADC hardware is fixed at a single rate.
-    // See docs/internals/03-usb-stack.md,
-    //     docs/internals/suspected-issues.md#stall-and-rp2350-lockup
-    return true;
-}
-
-// Override all other weak callbacks to prevent STALLs that trigger RP2350 hardware lockup
-bool tud_audio_set_req_ep_cb(uint8_t rhport, tusb_control_request_t const *p_request,
-                             uint8_t *pBuff) {
-    (void)rhport;
-    (void)p_request;
-    (void)pBuff;
-    return true;
-}
-
-bool tud_audio_set_req_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request,
-                              uint8_t *pBuff) {
-    (void)rhport;
-    (void)p_request;
-    (void)pBuff;
-    return true;
-}
-
-bool tud_audio_get_req_ep_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
-    return tud_control_xfer(rhport, p_request, NULL, 0);
-}
-
-bool tud_audio_get_req_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
-    return tud_control_xfer(rhport, p_request, NULL, 0);
+    return false;
 }
 
 bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {

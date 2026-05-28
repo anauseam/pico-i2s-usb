@@ -48,22 +48,7 @@ Any plan that adds, removes, or reorders descriptor blocks must update
 `TUD_CONFIG_DESCRIPTOR` total length argument so that this `static_assert`
 continues to hold.
 
-## 3.4 — Never STALL on the RP2350
-
-STALL responses on the RP2350 USB peripheral are suspected to lock
-the hardware based on historical association during development (see
-`suspected-issues.md`). Every `tud_audio_*` control callback in `src/usb_audio.c`
-should return either:
-
-- `true` (silent ACK for SET requests), or
-- `tud_control_xfer(rhport, p_request, NULL, 0)` (zero-length ACK for GET
-  requests), or
-- `tud_control_xfer(...)` with real payload for supported entities.
-
-Returning `false` from a control callback (which makes TinyUSB STALL) will lock the device. See `suspected-issues.md`
-for background.
-
-## 3.5 — Endpoint reactivation workaround
+## 3.4 — Endpoint reactivation workaround
 
 `tud_audio_set_itf_close_EP_cb` in `src/usb_audio.c` manually clears the
 `USB_BUF_CTRL_AVAIL` and `USB_BUF_CTRL_FULL` bits in
@@ -74,7 +59,7 @@ itself. The clear should cover both buffer 0 and buffer 1 (shifted mask).
 This callback is necessary. Do not duplicate this access pattern in
 other modules. See `06-workarounds.md` (proven workaround).
 
-## 3.6 — Fixed-rate device
+## 3.5 — Fixed-rate device
 
 This firmware presents a single fixed sample rate. The `SET_CUR(SAM_FREQ)`
 request from the host is intentionally swallowed by

@@ -48,15 +48,6 @@ extern "C" {
 #define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX (((SAMPLE_RATE / 1000) + 1) * 2 * 4)
 #define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ 4096
 
-// --- TINYUSB RISC-V ALIGNMENT FIX ---
-// TinyUSB declares several internal byte arrays (like ctrl_buf_1) using tu_static.
-// GCC does not align uint8_t arrays by default, which causes fatal Alignment Faults
-// on the RP2350's RISC-V cores when tu_memcpy_s is used during UAC2 control requests
-// (e.g. SET_CUR). By overriding tu_static to force 4-byte alignment, we guarantee
-// all internal state buffers are safe for 32-bit load/store instructions.
-#undef tu_static
-#define tu_static static __attribute__((aligned(4)))
-
 #ifdef __cplusplus
 }
 #endif

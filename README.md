@@ -142,7 +142,6 @@ Clock Source (Internal Fixed, ID=4)
 The TinyUSB stack requires several non-default configuration choices on the RP2350. These are based on source code analysis and have not been independently validated by reverting them:
 
 - **Flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`). TinyUSB's flow control path in `audiod_calc_tx_packet_sz()` requires the sample rate to be set via `SET_CUR` before `SET_INTERFACE`. Linux's UAC2 driver sends these in the opposite order. Disabling flow control bypasses this dependency.
-- **`tu_static` is overridden to force 4-byte alignment.** TinyUSB's internal byte arrays may not be naturally aligned, which could cause alignment faults on the RP2350's RISC-V cores during 32-bit memory operations.
 
 #### Isochronous Endpoint Management (`usb_audio.c`)
 
@@ -150,7 +149,7 @@ TinyUSB's RP2040/RP2350 DCD uses `TUP_DCD_EDPT_ISO_ALLOC`, which pre-allocates I
 
 `tud_audio_set_itf_close_EP_cb` manually clears the `AVAIL` and `FULL` bits in the RP2350 USB DPRAM buffer control registers for the audio endpoint before TinyUSB reactivates it.
 
-All remaining UAC2 control callbacks (GET/SET for entities, endpoints, and interfaces) return success or zero-length ACKs rather than STALL responses. This is a precautionary measure — STALL behavior on the RP2350's USB peripheral has not been independently tested and may or may not cause issues.
+All remaining UAC2 control callbacks (GET/SET for entities, endpoints, and interfaces) return `false` to correctly STALL unsupported features, complying with the standard.
 
 ### Clock Architecture
 
@@ -216,7 +215,7 @@ digits over many minutes.
 UART output is routed to the default SDK UART pins. Connect a USB-to-serial adapter or a Raspberry Pi Debug Probe to read the output.
 
 > [!WARNING]
-> `CFG_TUSB_DEBUG` in `tusb_config.h` must remain at `0` during audio streaming. With debug level 2 enabled, the audio stream was observed to arrive at a fraction of its expected rate in Audacity. Disabling debug output resolved the issue. The likely cause is that TinyUSB's per-transfer log output blocks `tud_task()` on the UART, but this mechanism has not been independently verified.
+> `CFG_TUSB_DEBUG` in `tusb_config.h` must remain at `0` during audio streaming. With debug level 2 enabled, the audio stream was observed to arrive at a fraction of its expected rate in Audacity. Disabling debug output resolved the issue. To be clear: this is **not a bug** in TinyUSB, but rather a latency concern. The likely cause is that TinyUSB's per-transfer log output blocks `tud_task()` on the UART long enough to starve the pipeline, but this mechanism has not been independently verified.
 
 ### Building from Source
 

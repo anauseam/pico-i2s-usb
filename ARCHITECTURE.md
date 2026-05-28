@@ -168,19 +168,6 @@ documents what a Pico-as-Controller PIO program looks like, but it
 is not compiled. The build system removes it from `add_executable`.
 See [`docs/internals/04-configuration.md`](docs/internals/04-configuration.md).
 
-### 3.4 Why we never STALL
-
-The RP2350 USB peripheral has been associated (suspected, not yet
-formally reproduced) with hanging when its endpoint 0 STALLs. Every
-UAC2 control callback that would normally return `false` (causing
-TinyUSB to STALL) instead returns a silent ACK. The cost is that the
-device claims to support features it doesn't actually implement
-(volume, mute), but all tested hosts accept the silent ACK and move
-on.
-
-See [`docs/internals/03-usb-stack.md`](docs/internals/03-usb-stack.md)
-and [`docs/internals/suspected-issues.md#stall-and-rp2350-lockup`](docs/internals/suspected-issues.md#stall-and-rp2350-lockup).
-
 ## 4. Open observations
 
 These are concerns logged in the maintainer's notes that have not
