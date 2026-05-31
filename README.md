@@ -72,8 +72,8 @@ Below is the default wiring guide for the Pico 2 and the PCM1808 ADC with an ext
 To configure the PCM1808 as the I2S Controller and to output standard I2S data format, set the following pins:
 
 - Connect **FMT** (sometimes printed as FMY) to `GND` (I2S format).
-- Connect **MD0** to `3.3V` (Controller mode, 256 fS).
-- Connect **MD1** to `GND` (Controller mode, 256 fS).
+- Connect **MD0** to `3.3V` (Controller mode, 512 fS).
+- Connect **MD1** to `GND` (Controller mode, 512 fS).
 
 Once wired, plug the Pico into your computer. It will appear in your system audio settings as a USB input device.
 
@@ -139,9 +139,9 @@ Clock Source (Internal Fixed, ID=4)
 
 #### TinyUSB Configuration (`tusb_config.h`)
 
-The TinyUSB stack requires several non-default configuration choices on the RP2350. These are based on source code analysis and have not been independently validated by reverting them:
+The TinyUSB stack requires several non-default configuration choices on the RP2350. See `docs/internals/06-workarounds.md` for the full proof behind each item.
 
-- **Flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`). TinyUSB's flow control path in `audiod_calc_tx_packet_sz()` requires the sample rate to be set via `SET_CUR` before `SET_INTERFACE`. Linux's UAC2 driver sends these in the opposite order. Disabling flow control bypasses this dependency.
+- **Flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`). TinyUSB's flow control path in `audiod_calc_tx_packet_sz()` requires `sample_rate_tx` to be initialised by receiving a `SET_CUR(SAM_FREQ)` command from the host. For a fixed-frequency device, Linux never sends this command: the Clock Source descriptor declares the frequency control as read-only (`AUDIO_CTRL_R`), and the Linux UAC2 driver (`sound/usb/clock.c`) correctly skips `SET_CUR` for read-only controls. Because `sample_rate_tx` stays `0`, TinyUSB computes a packet size of `0` permanently. This is a proven structural flaw in TinyUSB's UAC2 flow control for fixed-rate devices. See `docs/internals/06-workarounds.md §6.1` for the full proof.
 
 #### Isochronous Endpoint Management (`usb_audio.c`)
 
@@ -253,4 +253,4 @@ cmake -DPICO_SDK_PATH=/path/to/sdk \
       ..
 ```
 
-*Note: Pre-compiled binaries for standard configurations will be available on the [Releases](../../releases) page.*
+*Note: Pre-compiled binaries for the default configuration will be available on the [Releases](../../releases) page.*

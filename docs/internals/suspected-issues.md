@@ -82,20 +82,3 @@ not as a workaround that might be refuted.
 Implementing the above would also require updating the
 "ARCHITECTURAL LIMITATION" comment in `i2s_audio.c` and removing this
 entry from this file.
-
----
-
-## Process note: clean-build verification {#clean-build-verification}
-
-**Discovered during the v0.1.0 release cleanup commit.** A clean build of
-the codebase failed because UAC2 entity-ID macros (`UAC2_ENTITY_*`) were
-referenced in `src/usb_audio.c` but never defined — the constraint in
-`03-usb-stack.md` was silently violated. The incremental
-build had been silently passing because `usb_audio.c` had a stale `.o`.
-
-**Future CI scope:** When CI is added (deferred to post-v0.1.0), the
-pipeline MUST do a clean build (`cmake --build build --clean-first` or
-equivalent) to catch this class of incremental-build dependency drift.
-
-Not a rule yet because there is no CI. Documented here to be remembered
-when CI is set up.
