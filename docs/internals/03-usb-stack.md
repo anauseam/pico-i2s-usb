@@ -54,26 +54,54 @@ continues to hold.
 `USB_BUF_CTRL_AVAIL` and `USB_BUF_CTRL_FULL` bits in
 `usb_dpram->ep_buf_ctrl[ep_num].in` for the audio IN endpoint. This is
 the only sanctioned direct access to `usb_dpram` outside of TinyUSB
-itself. The clear should cover both buffer 0 and buffer 1 (shifted mask).
+itself. The clear must cover both buffer 0 and buffer 1 (shifted mask).
 
-This callback is necessary. Do not duplicate this access pattern in
-other modules. See `06-workarounds.md` (proven workaround).
+This callback is the **only** hook that fires on Alt 0 in TinyUSB's
+`TUP_DCD_EDPT_ISO_ALLOC` code path. TinyUSB has no
+`dcd_edpt_iso_deactivate` API, so the DCD layer is never notified of
+stream closure. Do not move this logic to `dcd_edpt_iso_activate`
+(Alt 1) — empirical testing showed that clears at activation time
+silently break audio even though they eliminate the panic.
 
-## 3.5 — Fixed-rate device
+Do not duplicate this access pattern in other modules.
+See `06-workarounds.md §6.2` for the full technical proof and upstream
+PR requirements.
 
-This firmware presents a single fixed sample rate. The `SET_CUR(SAM_FREQ)`
-request from the host is intentionally swallowed by
-`tud_audio_set_req_entity_cb` because the I2S ADC clock is hardware-fixed.
+## 3.5 — Fixed-rate device and flow control
 
-If multi-rate support (e.g. supporting both 44.1kHz and 48kHz and allowing the host OS to switch between them) is added in the future, we should:
+This firmware presents a single fixed sample rate. The Clock Source descriptor
+in `src/usb_descriptors.c` declares the frequency control as **read-only**
+(`AUDIO_CTRL_R`). Consequently, Linux's UAC2 driver (`sound/usb/clock.c`)
+never issues `SET_CUR(SAM_FREQ)` — by design and per spec, hosts must not
+write to a read-only control.
 
-1. Update `UAC2_ENTITY_CLOCK_SOURCE` GET handlers to advertise multiple
-   `subrange` entries instead of a single fixed `bMin == bMax`.
-2. Implement an actual SET handler that reconfigures the PIO clock divider
-   in `i2s_audio.c` (via a new public API on that module) AND reconfigures
-   the PWM MCLK divider when `GENERATE_MCLK` is set.
-3. Re-evaluate `CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL` — the rationale for
-   disabling it (see `06-workarounds.md`)
-   may no longer apply.
+`tud_audio_set_req_entity_cb` in `src/usb_audio.c` returns `false` (STALL)
+for all SET entity requests. This is correct: the hardware cannot change its
+sample rate, so any SET attempt should be rejected.
 
-Until all three are done, the swallow-SET behaviour stays.
+**TinyUSB flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`).
+TinyUSB's flow control path initialises its internal `sample_rate_tx` to `0`
+and has no mechanism to seed it except by receiving `SET_CUR(SAM_FREQ)`. Since
+Linux never sends that command for a read-only clock, `sample_rate_tx` stays
+`0` and `audiod_calc_tx_packet_sz()` computes a packet size of `0` permanently.
+This is a proven structural flaw in TinyUSB, not a misconfiguration of this
+project. See `06-workarounds.md §6.1` for the full proof including Linux kernel
+source citations and empirical serial-spy logs.
+
+If multi-rate support is added in the future (e.g. supporting 44.1 kHz and
+48 kHz and allowing the host OS to switch between them), do the following:
+
+1. Change the Clock Source descriptor `_ctrl` field to `AUDIO_CTRL_RW` so the
+   host is permitted to issue `SET_CUR(SAM_FREQ)`.
+2. Update the `GET_RANGE` handler to advertise multiple `subrange` entries
+   instead of a single fixed `bMin == bMax`.
+3. Implement a real SET handler in `usb_audio.c` that reconfigures the PIO
+   clock divider in `i2s_audio.c` (via a new public API on that module) AND
+   reconfigures the PWM MCLK divider when `GENERATE_MCLK` is set.
+4. Re-evaluate `CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL` — once the host can and
+   does send `SET_CUR`, the upstream fix for the `sample_rate_tx`
+   initialization path would need to land in TinyUSB first, OR the project
+   must seed `sample_rate_tx` via an internal patch.
+
+Until all of the above are done, the STALL behaviour and `EP_IN_FLOW_CONTROL 0`
+stay.

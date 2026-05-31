@@ -34,7 +34,7 @@
 
 // --- Audio Setup ---
 // Supported sample rates: 44100, 48000, 96000
-#define SAMPLE_RATE 96000
+#define SAMPLE_RATE 48000
 
 // --- Double Buffer Setup ---
 // 256 x 32-bit words = 128 stereo sample pairs per buffer
