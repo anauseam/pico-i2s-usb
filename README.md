@@ -75,11 +75,13 @@ To configure the PCM1808 as the I2S Controller and to output standard I2S data f
 - Connect **MD0** to `3.3V` (Controller mode, 512 fS).
 - Connect **MD1** to `GND` (Controller mode, 512 fS).
 
+At 512 fS, a 48 kHz sample rate needs a 24.576 MHz oscillator (512 × 48 kHz).
+
 Once wired, plug the Pico into your computer. It will appear in your system audio settings as a USB input device.
 
 ## Technical Details
 
-This firmware is built using the official Raspberry Pi Pico C/C++ SDK and the TinyUSB stack. It uses custom PIO (Programmable I/O) state machine programs to capture I2S audio data, a DMA ping-pong buffer to move audio into memory with zero CPU overhead, and TinyUSB's UAC2 audio class driver to stream the data to the host.
+This firmware is built using the official Raspberry Pi Pico C/C++ SDK and the TinyUSB stack. It uses a custom PIO (Programmable I/O) state machine program to capture I2S audio data, a DMA ping-pong buffer to move audio into memory without per-sample CPU work (the CPU services one interrupt per buffer), and TinyUSB's UAC2 audio class driver to stream the data to the host.
 
 ### Data Pipeline
 
@@ -153,32 +155,24 @@ All remaining UAC2 control callbacks (GET/SET for entities, endpoints, and inter
 
 ### Clock Architecture
 
-Empirical testing of all four possible clock configurations (the 2×2 matrix of Controller/Target × MCLK source) produced the following results:
+The system clock `clk_sys` runs at **61.44 MHz**: `pll_sys` multiplies the 12 MHz crystal by 128 and divides the result by 5 × 5. The MCLK the Pico can generate divides from it by an integer. For the derivation, see [ARCHITECTURE.md §3.3](ARCHITECTURE.md).
 
-| | **MCLK = External Oscillator** | **MCLK = Pico PWM** |
-| :--- | :--- | :--- |
-| **Pico = Target (ADC is Controller)** | ✅ Validated (44.1 / 48 / 96 kHz) | ✅ Validated (44.1 / 48 / 96 kHz) |
-| **Pico = Controller (ADC is Target)** | ❌ Guaranteed failure | ❌ Guaranteed failure |
+I2S role: the ADC generates BCLK and LRCK and the Pico is the **Target**; its PIO state machine, running at the full `clk_sys`, samples the data on their edges. The Pico-as-Controller role is not implemented yet.
 
-**The Pico cannot act as I2S Controller.** Both configurations where the Pico generates BCLK and LRCK fail:
+The ADC's master clock (MCLK) comes from one of two places, selected by `GENERATE_MCLK` in `src/audio_config.h`.
 
-- **With external MCLK:** The Pico's PIO clocks and the external oscillator are physically independent clock domains with no synchronization. LRCK will inevitably drift against MCLK, causing the ADC to lose sync.
-- **With PWM MCLK:** The Pico's PWM (MCLK) and PIO (BCLK/LRCK) use independent fractional dividers of the same 150 MHz PLL. These accumulate phase error relative to each other, violating the ADC's requirement that BCLK and LRCK be coherently derived from MCLK.
+#### External Oscillator (Default)
 
-This firmware therefore hard-codes the Pico to Target mode. The file
-`src/i2s_rx_controller.pio` is retained on disk as an educational reference
-showing what a Pico-as-Controller PIO program looks like, but it is no
-longer compiled into the build.
+`GENERATE_MCLK 0`. An oscillator feeds the ADC's MCLK input, and the ADC derives BCLK and LRCK from it. Any sample rate the ADC and the oscillator support works, including 44.1 kHz.
 
-#### Target Mode with External Oscillator (Default — Recommended)
+#### Pico-Generated MCLK
 
-The external oscillator feeds MCLK directly into the ADC. The ADC divides it internally to produce perfectly phase-coherent BCLK and LRCK, which it sends to the Pico. The Pico's PIO state machine runs at the full 150 MHz system clock to catch external edges with minimal latency. This is the highest-fidelity configuration.
+`GENERATE_MCLK 1`. The Pico divides `clk_sys` by 5 in a CLK_GPOUT clock generator and outputs **12.288 MHz** (256 × 48 kHz) at a 50 % duty cycle on `PIN_MCLK` (default `GPIO 21`). The ADC derives BCLK and LRCK from this clock. Supported sample rates:
 
-#### Target Mode with PWM MCLK (No External Oscillator)
+- **48 kHz** with an ADC that runs at 256 fS. On the PCM1808, connect **MD0** and **MD1** to `3.3V` (Controller mode, 256 fS).
+- **96 kHz** with an ADC whose own PLL makes it from 12.288 MHz. The PCM1808 cannot: at 96 kHz it needs a 24.576 MHz clock.
 
-Enable via `GENERATE_MCLK 1` in `src/audio_config.h`. The Pico generates a PWM square wave on `GPIO 12` at 256 × the configured sample rate and feeds it into the ADC as MCLK. The ADC runs in Controller mode, deriving coherent BCLK and LRCK internally from this input, and sends them to the Pico.
-
-Although the PWM clock contains fractional-divider jitter (~6.67 ns cycle-to-cycle variation), the ADC's internal PLL is robust enough to tolerate it. This has been validated at 44.1 kHz, 48 kHz, and 96 kHz. This configuration requires no external oscillator hardware, at the cost of a small, measurable increase in clock noise.
+`PIN_MCLK` must be a CLK_GPOUT pin. On the Pico 2 these are `GPIO 13`, `15` and `21`.
 
 ### Project Structure
 
@@ -187,9 +181,9 @@ pico-i2s-usb/
 ├── CMakeLists.txt                  # Build configuration
 ├── pico_sdk_import.cmake           # Pico SDK integration
 └── src/
-    ├── main.c                      # Entry point and conductor loop
+    ├── main.c                      # Entry point, clk_sys setup and conductor loop
     ├── audio_config.h              # All configuration (pins, sample rate, modes, debug)
-    ├── i2s_audio.c / .h            # PIO initialization, clock setup, MCLK PWM
+    ├── i2s_audio.c / .h            # PIO initialization, MCLK output
     ├── i2s_rx_controller.pio       # PIO program: Controller mode (educational, NOT built)
     ├── i2s_rx_target.pio           # PIO program: Target mode (receives external clocks)
     ├── dma_audio.c / .h            # DMA ping-pong buffer management and ISR
@@ -209,10 +203,12 @@ UART logging of raw I2S sample values in the main loop. When enabled, one
 line is printed approximately every 1.3 seconds to minimize impact on the
 real-time audio path. The log line also includes a running `overflow=N`
 counter — the number of DMA buffers dropped because TinyUSB's `ep_in_ff`
-could not accept them. A healthy stream holds at zero or stays in single
-digits over many minutes.
+could not accept them. The counter also climbs whenever the host is
+connected but not recording, because `ep_in_ff` stays full between
+streams; compare its value at the start and end of a recording. During a
+healthy recording it does not change.
 
-UART output is routed to the default SDK UART pins. Connect a USB-to-serial adapter or a Raspberry Pi Debug Probe to read the output.
+UART output goes to UART0: TX on `GPIO 0`, RX on `GPIO 1`, 115200 baud. Read it with a Raspberry Pi Debug Probe or a USB-to-serial adapter; the Pico's own USB port carries only audio.
 
 > [!WARNING]
 > `CFG_TUSB_DEBUG` in `tusb_config.h` must remain at `0` during audio streaming. With debug level 2 enabled, the audio stream was observed to arrive at a fraction of its expected rate in Audacity. Disabling debug output resolved the issue. To be clear: this is **not a bug** in TinyUSB, but rather a latency concern. The likely cause is that TinyUSB's per-transfer log output blocks `tud_task()` on the UART long enough to starve the pipeline, but this mechanism has not been independently verified.
@@ -253,4 +249,4 @@ cmake -DPICO_SDK_PATH=/path/to/sdk \
       ..
 ```
 
-*Note: Pre-compiled binaries for the default configuration will be available on the [Releases](../../releases) page.*
+*Note: Pre-compiled binaries for the default configuration will be available on the Releases page.*

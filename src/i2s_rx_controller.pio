@@ -3,12 +3,8 @@
 ; RETAINED FOR EDUCATIONAL REFERENCE — NOT BUILT
 ;
 ; This PIO program implements the Pico as the I2S Controller (Master): the Pico
-; would generate BCLK and LRCK and feed them to the ADC. Empirical hardware
-; testing established that this configuration cannot be made reliable on the
-; RP2350 (independent fractional dividers for PWM-MCLK vs PIO-BCLK/LRCK
-; accumulate phase error; pairing with an external oscillator places MCLK and
-; BCLK/LRCK in independent clock domains). See the "Clock Architecture"
-; section of README.md for the full matrix.
+; generates BCLK and LRCK and feeds them to the ADC. The firmware uses target
+; mode (the ADC drives BCLK and LRCK).
 ;
 ; This file is kept on disk because it is a useful reference for anyone
 ; learning to write I2S-master PIO programs. It is intentionally excluded

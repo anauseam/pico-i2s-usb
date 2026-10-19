@@ -23,8 +23,8 @@ SDK setup functions.
 | Peripheral / SDK area                               | Owner module                            |
 | --------------------------------------------------- | --------------------------------------- |
 | PIO state machines (`pio0`, `pio1`)                 | `src/i2s_audio.{c,h}`                   |
-| `hardware_pwm` (when used for MCLK)                 | `src/i2s_audio.{c,h}`                   |
-| `clock_get_hz(clk_sys)` / clock config              | `src/i2s_audio.{c,h}`                   |
+| `clk_sys` PLL (`set_sys_clock_pll`, once at boot)   | `src/main.c`                            |
+| CLK_GPOUT (MCLK output), `clock_get_hz(clk_sys)`    | `src/i2s_audio.{c,h}`                   |
 | DMA channels, `DMA_IRQ_0`, `dma_hw->ints0`          | `src/dma_audio.{c,h}`                   |
 | TinyUSB stack init (`tusb_init`, `tud_task`)        | `src/usb_audio.{c,h}`                   |
 | All `tud_audio_*` callbacks                         | `src/usb_audio.{c,h}`                   |

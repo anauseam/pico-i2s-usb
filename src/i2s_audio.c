@@ -1,31 +1,19 @@
 #include "i2s_audio.h"
 #include "audio_config.h"
-#if GENERATE_MCLK
-#include "hardware/clocks.h"
-#include "hardware/pwm.h"
-#endif
+#include "hardware/clocks.h" // Required by setup_mclk_gpout() when GENERATE_MCLK=1
 #include <stdio.h>
 
 // The Pico C/C++ SDK automatically generates these headers from your .pio files
 #include "i2s_rx_target.pio.h"
 
 #if GENERATE_MCLK
-static void setup_mclk_pwm(uint gpio) {
-    gpio_set_function(gpio, GPIO_FUNC_PWM);
-    uint slice_num = pwm_gpio_to_slice_num(gpio);
-    pwm_config config = pwm_get_default_config();
-
-    uint32_t mclk_freq = SAMPLE_RATE * 256;
-    // With wrap=1, the PWM period is 2 clock ticks (tick 0 and tick 1).
-    // Therefore, the effective frequency is sys_clk / (divider * 2).
-    // This is why we multiply the target frequency by 2 here.
-    float divider = (float)clock_get_hz(clk_sys) / (float)(mclk_freq * 2);
-
-    pwm_config_set_clkdiv(&config, divider);
-    pwm_config_set_wrap(&config, 1);
-
-    pwm_init(slice_num, &config, true); // Init first, then set level, else it will start at 0
-    pwm_set_gpio_level(gpio, 1);        // 50% duty cycle
+static void setup_mclk_gpout(uint gpio) {
+    // clk_sys / 5 = 12.288 MHz (256 × 48 kHz). With an odd divider the duty cycle is
+    // 40 % unless DC50 is set. clock_gpio_init_int_frac16() rewrites CTRL and no SDK
+    // call sets DC50, so it is set here afterwards, on this pin's GPOUT generator.
+    clock_gpio_init_int_frac16(gpio, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 5, 0);
+    hw_set_bits(&clocks_hw->clk[gpio_to_gpout_clock_handle(gpio, clk_gpout0)].ctrl,
+                CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS);
 }
 #endif
 
@@ -36,8 +24,9 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
     uint offset;
 
 #if GENERATE_MCLK
-    printf("Generating MCLK on GPIO %d targeting %d Hz...\n", PIN_MCLK, SAMPLE_RATE);
-    setup_mclk_pwm(PIN_MCLK);
+    printf("Generating MCLK on GPIO %d: %lu Hz (clk_sys / 5 via CLK_GPOUT)\n", PIN_MCLK,
+           (unsigned long)(clock_get_hz(clk_sys) / 5));
+    setup_mclk_gpout(PIN_MCLK);
 #endif
 
     printf("Starting I2S as TARGET (Expecting %d Hz from master)...\n", SAMPLE_RATE);

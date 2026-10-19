@@ -1,3 +1,4 @@
+#include "hardware/clocks.h"
 #include "pico/stdlib.h" // IWYU pragma: keep
 #include <stdio.h>
 
@@ -8,6 +9,13 @@
 #include "usb_audio.h"
 
 int main() {
+    // pll_sys: FOUTVCO = 12 MHz × FBDIV 128 = 1536 MHz; FOUTPOSTDIV = 1536 / 5 / 5
+    // = 61.44 MHz, taken undivided as clk_sys. CLK_GPOUT divides clk_sys by 5 for the
+    // 12.288 MHz MCLK. clk_sys must stay ≥ 1.1 × clk_usb (48 MHz) while USB runs
+    // (erratum RP2350-E12).
+    // Call before stdio_init_all(): this moves clk_peri, the UART's clock, to pll_usb.
+    set_sys_clock_pll(1536000000, 5, 5);
+
     stdio_init_all();
 
     // --- 1. INITIALIZE HARDWARE SUBSYSTEMS ---

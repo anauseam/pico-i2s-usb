@@ -48,8 +48,7 @@ pico_set_program_version(pico-i2s-usb "${PROJECT_VERSION}")
 
 # Generate PIO headers.
 # Note: i2s_rx_controller.pio is retained on disk as an educational artifact
-# (see README "Clock Architecture") but is intentionally NOT built — the Pico
-# cannot reliably act as I2S Controller on this hardware.
+# and is not built; the firmware uses target mode.
 pico_generate_pio_header(pico-i2s-usb ${CMAKE_CURRENT_LIST_DIR}/src/i2s_rx_target.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
@@ -62,7 +61,6 @@ target_link_libraries(pico-i2s-usb
         hardware_pio
         hardware_dma
         hardware_clocks
-        hardware_pwm
         tinyusb_device
         tinyusb_board
 )

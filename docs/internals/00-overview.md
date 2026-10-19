@@ -72,9 +72,8 @@ These principles are repeated in the more specific doc files but are listed here
 2. The audio hot path is non-blocking. No heap allocation, no `sleep_ms`, no
    unconditional `printf`.
 3. All user-tunable configuration lives in `src/audio_config.h`.
-4. The Pico is ALWAYS the I2S Target. The ADC is ALWAYS the I2S Controller.
-   Pico-as-Controller is empirically known to fail on this hardware and the
-   supporting code paths have been removed.
+4. The ADC is the I2S Controller and the Pico is the I2S Target. The
+   Pico-as-Controller role is not implemented yet.
 5. Every workaround in `06-workarounds.md` (reproduced) and
    every defensive block referenced from `suspected-issues.md`
    (unreproduced) should stay with its block comment intact, unless a commit

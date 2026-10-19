@@ -96,8 +96,7 @@ If multi-rate support is added in the future (e.g. supporting 44.1 kHz and
 2. Update the `GET_RANGE` handler to advertise multiple `subrange` entries
    instead of a single fixed `bMin == bMax`.
 3. Implement a real SET handler in `usb_audio.c` that reconfigures the PIO
-   clock divider in `i2s_audio.c` (via a new public API on that module) AND
-   reconfigures the PWM MCLK divider when `GENERATE_MCLK` is set.
+clock divider in `i2s_audio.c`.
 4. Re-evaluate `CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL` — once the host can and
    does send `SET_CUR`, the upstream fix for the `sample_rate_tx`
    initialization path would need to land in TinyUSB first, OR the project

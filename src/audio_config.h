@@ -2,17 +2,16 @@
 #define AUDIO_CONFIG_H
 
 // =============================================================================
-// VALIDATED CLOCK CONFIGURATION
+// CLOCK CONFIGURATION
 // =============================================================================
 //
-// The Pico is ALWAYS the I2S Target. The ADC is ALWAYS the I2S Controller.
+// The ADC is the I2S Controller and the Pico is the I2S Target (the
+// Pico-as-Controller role is not implemented yet).
 // Configure GENERATE_MCLK below depending on whether your hardware has an
 // external oscillator feeding the ADC's MCLK pin (GENERATE_MCLK=0) or whether
-// the Pico itself must generate MCLK via PWM (GENERATE_MCLK=1).
+// the Pico itself must generate MCLK via CLK_GPOUT (GENERATE_MCLK=1).
 //
-// For the full historical rationale (why Pico-as-Controller is infeasible
-// and which configurations were empirically tested), see ARCHITECTURE.md and
-// the "Clock Architecture" section of README.md.
+// See the "Clock Architecture" section of README.md and ARCHITECTURE.md §3.3.
 //
 // =============================================================================
 
@@ -23,17 +22,19 @@
 // Only enable for brief hardware verification.
 #define AUDIO_DEBUG_LOGGING 0
 
-// Set to 1 if the Pico should generate MCLK via PWM (no external oscillator).
-// Set to 0 if you have an external oscillator driving the ADC directly (recommended).
+// Set to 1 to have the Pico output a 12.288 MHz MCLK (clk_sys / 5, CLK_GPOUT) on PIN_MCLK.
+// Set to 0 if an external oscillator drives the ADC's MCLK input (default).
 #define GENERATE_MCLK 0
 
 // --- Pin Setup ---
 #define PIN_DIN 2         // Data In (from ADC DOUT)
 #define PIN_CLOCK_BASE 10 // BCLK on GPIO 10, LRCK on GPIO 11 (from ADC in Master mode)
-#define PIN_MCLK 12       // Master Clock out to ADC (only used if GENERATE_MCLK is 1)
+// CLK_GPOUT pin: 13, 15 or 21 on the Pico 2 (only used if GENERATE_MCLK is 1).
+#define PIN_MCLK 21
 
 // --- Audio Setup ---
-// Supported sample rates: 44100, 48000, 96000
+// Supported sample rates: 44100, 48000, 96000 with an external oscillator.
+// With GENERATE_MCLK 1: the rates the ADC makes from 12.288 MHz (48000 at 256 fS).
 #define SAMPLE_RATE 48000
 
 // --- Double Buffer Setup ---

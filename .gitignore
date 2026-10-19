@@ -2,6 +2,7 @@
 build/
 bin/
 obj/
+*.uf2
 
 # --- Generated PIO Headers ---
 # These are generated during build and should not be tracked
@@ -18,6 +19,7 @@ compile_commands.json
 .clineignore
 plan.md
 reference/
+docs/notes
 
 # --- OS Specific ---
 .DS_Store

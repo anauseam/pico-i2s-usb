@@ -146,26 +146,53 @@ the application side.
 
 See [`docs/internals/02-audio-pipeline.md`](docs/internals/02-audio-pipeline.md).
 
-### 3.3 Why the Pico is always Target
+### 3.3 Clock plan
 
-The README's clock-architecture matrix shows that all four
-combinations of (Pico=Controller/Target × MCLK=PWM/external) were
-tested, and the two Pico-as-Controller configurations fail. Both
-failures have the same root cause: BCLK and LRCK must be derived
-from MCLK in a phase-coherent manner, and the Pico cannot
-synchronize its PIO state machine to either an external oscillator
-(physically independent clock domain) or its own PWM peripheral
-(independent fractional divider on the same PLL — accumulates phase
-error).
+`clk_sys` runs at 61.44 MHz. The derivation uses the PLL names of the
+RP2350 datasheet (§8.6, Figure 40):
 
-The ADC, by contrast, has a single PLL that derives BCLK and LRCK
-from its MCLK input by integer division. They are phase-coherent by
-construction. So the ADC must own the BCLK/LRCK timebase. The Pico
-sits downstream and samples the I2S data on those clock edges.
+| Quantity           | Formula                                 | Value                     |
+| ------------------ | --------------------------------------- | ------------------------- |
+| FREF               | crystal                                 | 12 MHz                    |
+| FOUTVCO            | FREF / REFDIV (1) × FBDIV (128)         | 1536 MHz                  |
+| FOUTPOSTDIV        | FOUTVCO / (POSTDIV1 (5) × POSTDIV2 (5)) | 61.44 MHz                 |
+| `clk_sys`          | `pll_sys` FOUTPOSTDIV, undivided        | 61.44 MHz                 |
+| MCLK (`CLK_GPOUT`) | `clk_sys` / 5                           | 12.288 MHz = 256 × 48 kHz |
 
-The file `src/i2s_rx_controller.pio` is retained on disk because it
-documents what a Pico-as-Controller PIO program looks like, but it
-is not compiled. The build system removes it from `add_executable`.
+`set_sys_clock_pll(1536000000, 5, 5)` in `src/main.c` programs
+`pll_sys` and selects it as the source of `clk_sys`
+(CLK_SYS_CTRL.AUXSRC = CLKSRC_PLL_SYS, datasheet §8.1). The PLL limits
+are FOUTVCO 750–1600 MHz, FBDIV 16–320, POSTDIV1 and POSTDIV2 1–7, and
+at most 150 MHz out of `pll_sys` (§8.6.3).
+
+Why 61.44 MHz:
+
+- It is the only `clk_sys` within the 150 MHz rating, and fast enough for
+  USB (below), that divides by an integer into 12.288 MHz. An integer
+  divider gives the same period every cycle; a fractional one alternates
+  between two periods (§8.1.3.3).
+- USB needs `clk_sys` at least 10 % faster than `clk_usb` (48 MHz) while
+  the peripheral is in use (erratum RP2350-E12). 61.44 MHz is 28 % faster.
+
+An odd divider gives a 40 % duty cycle; the `CLK_GPOUT` generator's DC50
+bit corrects it to 50 % (§8.1.3.4). The PCM1808 accepts 40–60 % on its
+system clock, so without DC50 the clock would sit on its limit.
+
+44.1 kHz needs an external oscillator: its 11.2896 MHz clock is not an
+integer division of any clock the 12 MHz crystal can produce.
+
+#### Who drives the I2S clocks
+
+The firmware implements one I2S role: the ADC drives BCLK and LRCK from
+its MCLK, and the Pico is the I2S Target. The receiver in
+`src/i2s_rx_target.pio` runs at the full `clk_sys` and follows the ADC's
+edges. The Pico-as-Controller role is not implemented yet;
+`src/i2s_rx_controller.pio` holds a controller program and is not built.
+
+An ADC running from an external oscillator must be the controller in any
+case: the oscillator and the Pico's crystal are independent clocks, so
+BCLK and LRCK made by the Pico would drift against the ADC's MCLK.
+
 See [`docs/internals/04-configuration.md`](docs/internals/04-configuration.md).
 
 ## 4. Open observations
