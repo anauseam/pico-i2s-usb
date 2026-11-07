@@ -70,5 +70,9 @@ target_include_directories(pico-i2s-usb PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
 )
 
+set(AUDIO_CONFIG_DEFINES "" CACHE STRING
+    "Overrides of src/audio_config.h defaults (NAME=VALUE;...)")
+target_compile_definitions(pico-i2s-usb PRIVATE ${AUDIO_CONFIG_DEFINES})
+
 pico_add_extra_outputs(pico-i2s-usb)
 

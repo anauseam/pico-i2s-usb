@@ -1,12 +1,12 @@
 #include "i2s_audio.h"
 #include "audio_config.h"
-#include "hardware/clocks.h" // Required by setup_mclk_gpout() when GENERATE_MCLK=1
+#include "hardware/clocks.h" // IWYU pragma: keep
 #include <stdio.h>
 
 // The Pico C/C++ SDK automatically generates these headers from your .pio files
 #include "i2s_rx_target.pio.h"
 
-#if GENERATE_MCLK
+#if MCLK_SOURCE == MCLK_SOURCE_PICO
 static void setup_mclk_gpout(uint gpio) {
     // clk_sys / 5 = 12.288 MHz (256 × 48 kHz). With an odd divider the duty cycle is
     // 40 % unless DC50 is set. clock_gpio_init_int_frac16() rewrites CTRL and no SDK
@@ -23,7 +23,7 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
     *sm_out = 0;
     uint offset;
 
-#if GENERATE_MCLK
+#if MCLK_SOURCE == MCLK_SOURCE_PICO
     printf("Generating MCLK on GPIO %d: %lu Hz (clk_sys / 5 via CLK_GPOUT)\n", PIN_MCLK,
            (unsigned long)(clock_get_hz(clk_sys) / 5));
     setup_mclk_gpout(PIN_MCLK);
@@ -37,7 +37,7 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
     // Background: see docs/internals/suspected-issues.md#pio-frame-misalignment-recovery
 
     offset = pio_add_program(*pio_out, &i2s_rx_target_program);
-    i2s_rx_target_program_init(*pio_out, *sm_out, offset, PIN_DIN, PIN_CLOCK_BASE);
+    i2s_rx_target_program_init(*pio_out, *sm_out, offset, PIN_I2S_DIN, PIN_I2S_BCLK, PIN_I2S_LRCK);
 }
 
 void i2s_audio_start(PIO pio, uint sm) {

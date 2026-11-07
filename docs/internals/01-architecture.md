@@ -40,7 +40,8 @@ cover a second peripheral.
 A `.c` file may include:
 
 - Its own `.h`.
-- `audio_config.h`.
+- `audio_config.h`, which brings in `audio_config_derived.h` and
+  `audio_config_check.h`. Those two are never included directly.
 - `usb_descriptors.h` (only from `usb_audio.c` — for shared USB contract IDs).
 - Pico SDK / TinyUSB headers.
 - C standard library headers.
@@ -51,7 +52,7 @@ Inter-module data hand-off goes through `main.c`:
 - `i2s_audio_init` returns `PIO` + `sm` to `main.c`.
 - `main.c` passes them to `dma_audio_init`.
 - `dma_audio_get_ready_buffer` returns a buffer pointer to `main.c`.
-- `main.c` passes that pointer to `usb_audio_send_buffer`.
+- `main.c` passes that pointer to `usb_audio_submit_buffer`.
 
 This is the only sanctioned data-flow topology.
 

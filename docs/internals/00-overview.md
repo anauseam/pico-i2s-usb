@@ -54,6 +54,8 @@ Each architecture file is self-contained. `suspected-issues.md` is descriptive o
 | ----------------------------------- | ---------------------------------------------------- |
 | Entry point / conductor loop        | `src/main.c`                                         |
 | All user-tunable configuration      | `src/audio_config.h`                                 |
+| Derived config values               | `src/audio_config_derived.h`                         |
+| Build-time config checks            | `src/audio_config_check.h`                           |
 | PIO + clock setup                   | `src/i2s_audio.{c,h}`                                |
 | PIO programs                        | `src/i2s_rx_target.pio`, `src/i2s_rx_controller.pio` |
 | DMA ping-pong + ISR                 | `src/dma_audio.{c,h}`                                |
@@ -61,6 +63,8 @@ Each architecture file is self-contained. `suspected-issues.md` is descriptive o
 | USB descriptors + shared USB IDs    | `src/usb_descriptors.{c,h}`                          |
 | TinyUSB stack config                | `src/tusb_config.h`                                  |
 | Build                               | `CMakeLists.txt`, `pico_sdk_import.cmake`            |
+| Configuration build matrix          | `scripts/build-matrix.sh`                            |
+| CI and releases                     | `.github/workflows/`                                 |
 | Format                              | `.clang-format`                                      |
 
 ## Core invariants (cross-cutting)

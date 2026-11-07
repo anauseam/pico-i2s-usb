@@ -13,8 +13,18 @@ Always verify your change with a clean build:
 cmake --build build --clean-first
 ```
 
-Incremental builds can mask dependency drift; the clean build is what CI
-will run.
+Incremental builds can mask dependency drift.
+
+Before opening a PR, run the build matrix:
+
+```bash
+scripts/build-matrix.sh
+```
+
+It builds every supported configuration from scratch and confirms that each
+bad configuration stops the build with its expected message. CI runs the same
+script on every push and pull request. The RISC-V case is skipped when no
+RISC-V compiler is on your `PATH`, and CI always skips it.
 
 ## Code style
 

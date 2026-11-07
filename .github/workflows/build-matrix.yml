@@ -1,0 +1,39 @@
+name: Build Matrix
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build_matrix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7.0.1
+
+      - name: Install ARM GNU Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential cmake
+
+      - name: Setup Raspberry Pi Pico SDK
+        run: |
+          # The project uses Pico SDK 2.2.0 (from CMakeLists.txt)
+          git clone --depth 1 --branch 2.2.0 https://github.com/raspberrypi/pico-sdk.git
+          cd pico-sdk
+          git submodule update --init
+          echo "PICO_SDK_PATH=$(pwd)" >> $GITHUB_ENV
+
+      # Every case configures a fresh build folder, which would otherwise rebuild both tools.
+      - name: Share pioasm and picotool between cases
+        run: |
+          cmake -S "$PICO_SDK_PATH/tools/pioasm" -B "$RUNNER_TEMP/pioasm-build" \
+            -DPIOASM_FLAT_INSTALL=1 -DPIOASM_VERSION_STRING=2.2.0 \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/pico-tools"
+          cmake --build "$RUNNER_TEMP/pioasm-build" --target install
+          echo "pioasm_DIR=$RUNNER_TEMP/pico-tools/pioasm" >> $GITHUB_ENV
+          echo "PICOTOOL_FETCH_FROM_GIT_PATH=$RUNNER_TEMP/pico-tools" >> $GITHUB_ENV
+
+      - name: Run Build Matrix
+        run: scripts/build-matrix.sh

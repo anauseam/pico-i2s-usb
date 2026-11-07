@@ -1,6 +1,8 @@
 #ifndef _TUSB_CONFIG_H_
 #define _TUSB_CONFIG_H_
 
+#include "audio_config.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,13 +42,22 @@ extern "C" {
 #define CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0
 
 #define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 4 // 32-bit container
-#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX 2         // Stereo
-
-#include "audio_config.h"
 
 // Isochronous Endpoint settings
-#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX (((SAMPLE_RATE / 1000) + 1) * 2 * 4)
+// In bytes. A USB frame lasts 1 ms; the extra audio frame (+ 1) carries 44.1 kHz's
+// 45-frame packets and lets the device catch up when the ADC runs slightly fast.
+#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX                                                          \
+    (((AUDIO_RATE_MAX / 1000) + 1) * AUDIO_CHANNELS * CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX)
+// TinyUSB's FIFO between the DMA buffers and the USB packets (ep_in_ff), in bytes.
 #define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ 4096
+
+// The two-packet margin lets the host fall at least 1 ms behind before a whole DMA
+// buffer is dropped.
+#if AUDIO_BUFFER_SIZE * CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX +                               \
+        2 * CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX >                                                    \
+    CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ
+#error "AUDIO_BUFFER_FRAMES is too large for the USB FIFO"
+#endif
 
 #ifdef __cplusplus
 }
