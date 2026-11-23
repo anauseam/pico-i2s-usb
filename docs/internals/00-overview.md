@@ -74,7 +74,7 @@ These principles are repeated in the more specific doc files but are listed here
 1. `src/main.c` is the only file allowed to call into more than one of the
    audio/USB modules.
 2. The audio hot path is non-blocking. No heap allocation, no `sleep_ms`, no
-   unconditional `printf`.
+   `printf` (it waits for the UART).
 3. All user-tunable configuration lives in `src/audio_config.h`.
 4. The ADC is the I2S Controller and the Pico is the I2S Target. The
    Pico-as-Controller role is not implemented yet.

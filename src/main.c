@@ -1,7 +1,9 @@
 #include "hardware/clocks.h"
 #include "hardware/sync.h"
-#include "pico/stdlib.h" // IWYU pragma: keep
-#include <stdio.h>
+#include "hardware/uart.h" // IWYU pragma: keep
+#include "pico/stdlib.h"   // IWYU pragma: keep
+#include <stdio.h>         // IWYU pragma: keep
+#include <string.h>        // IWYU pragma: keep
 
 // Module Imports
 #include "audio_config.h"
@@ -36,6 +38,9 @@ int main() {
     uint32_t *ready_buffer = NULL;
 #if AUDIO_DEBUG_LOGGING
     int print_divider = 0;
+    char log_line[96];
+    int log_len = 0;
+    int log_pos = 0;
 #endif
 
     while (1) {
@@ -53,12 +58,25 @@ int main() {
 #if AUDIO_DEBUG_LOGGING
             // Print occasionally for debug verification.
             // 500 buffers * ~2.66ms = ~1.3 seconds per print
-            if (++print_divider % 500 == 0) {
-                printf("[Audio Data] L: 0x%08X | R: 0x%08X | overflow=%u\n", ready_buffer[0],
-                       ready_buffer[1], (unsigned)usb_audio_get_overflow_count());
+            if (++print_divider % 500 == 0 && log_pos == log_len) {
+                snprintf(log_line, sizeof log_line,
+                         "[Audio Data] L: 0x%08lX | R: 0x%08lX | overflow=%lu | overrun=%lu\r\n",
+                         (unsigned long)ready_buffer[0], (unsigned long)ready_buffer[1],
+                         (unsigned long)usb_audio_get_overflow_count(),
+                         (unsigned long)dma_audio_get_overrun_count());
+                log_len = (int)strlen(log_line);
+                log_pos = 0;
             }
 #endif
         }
+
+#if AUDIO_DEBUG_LOGGING
+        // printf would wait until the whole line has left the UART (stdio flushes after
+        // every printf). Each pass hands over only what the UART's TX FIFO has room for.
+        while (log_pos < log_len && uart_is_writable(uart_default)) {
+            uart_putc_raw(uart_default, log_line[log_pos++]);
+        }
+#endif
 
         // Interrupts stay off from the check to the sleep: one that arrives in between
         // still ends the WFI. Every interrupt that leaves work for this loop belongs here.

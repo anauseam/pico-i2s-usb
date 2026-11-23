@@ -13,6 +13,9 @@ static uint32_t audio_buffer_b[AUDIO_BUFFER_SIZE];
 static volatile bool buffer_a_ready = false;
 static volatile bool buffer_b_ready = false;
 
+// Filled buffers overwritten before the main loop took them.
+static volatile uint32_t overrun_count = 0;
+
 // DMA Hardware Channels
 static int dma_chan_a;
 static int dma_chan_b;
@@ -24,6 +27,12 @@ static void dma_handler() {
         dma_channel_set_trans_count(dma_chan_a, AUDIO_BUFFER_SIZE, false);
         dma_channel_set_write_addr(dma_chan_a, audio_buffer_a, false);
 
+        // The chain has already restarted channel B into audio_buffer_b, so a B
+        // buffer the loop hasn't taken is being overwritten.
+        if (buffer_b_ready) {
+            buffer_b_ready = false;
+            overrun_count++;
+        }
         __dmb();
         buffer_a_ready = true;
     }
@@ -33,6 +42,10 @@ static void dma_handler() {
         dma_channel_set_trans_count(dma_chan_b, AUDIO_BUFFER_SIZE, false);
         dma_channel_set_write_addr(dma_chan_b, audio_buffer_b, false);
 
+        if (buffer_a_ready) {
+            buffer_a_ready = false;
+            overrun_count++;
+        }
         __dmb();
         buffer_b_ready = true;
     }
@@ -89,4 +102,8 @@ bool dma_audio_get_ready_buffer(uint32_t **ready_buffer) {
 
 bool dma_audio_buffer_pending(void) {
     return buffer_a_ready || buffer_b_ready;
+}
+
+uint32_t dma_audio_get_overrun_count(void) {
+    return overrun_count;
 }

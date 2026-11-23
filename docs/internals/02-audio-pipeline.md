@@ -30,7 +30,8 @@ The following should be avoided inside any function listed in 2.1 to prevent stu
   `busy_wait_us`, `busy_wait_at_least_cycles`.
 - Synchronous file/UART/I²C/SPI blocking transfers.
 - Unbounded loops on hardware status registers (any `while (!flag) {}`).
-- Unconditional `printf`. Use `#if AUDIO_DEBUG_LOGGING` guards.
+- `printf`, even under `#if AUDIO_DEBUG_LOGGING`: it waits for the UART
+  (2.3).
 
 The only sanctioned wait in the conductor loop is the `wfi` at the bottom of
 `while (1)` in `main.c`. It runs with interrupts disabled, and only when no
@@ -44,15 +45,15 @@ the loop needs its own check in that condition.
 
 ## 2.3 — Diagnostic logging is gated
 
-Every `printf` in a hot-path function should be wrapped in
-`#if AUDIO_DEBUG_LOGGING ... #endif` and emitted at a human-readable rate.
-The current pattern is a modulo divider on a buffer counter (≈ 1.3 s
-between prints in `main.c`). Maintain that pattern: per-buffer or
-per-microframe prints will disrupt the timing. Even at that rate each line
-blocks the loop for about 5 ms at 115 200 baud, and the host misses 4–5
-isochronous IN packets; `ep_in_ff` absorbs the gap. A line that blocks for
-longer than one DMA buffer period lets a ping-pong buffer be overwritten
-before the loop takes it, which no counter records.
+Diagnostic output in the loop is wrapped in `#if AUDIO_DEBUG_LOGGING` and
+limited to one line about every 1.3 s (the divider in `main.c`).
+
+Never call `printf` in the loop: the SDK waits until the whole line has left
+the UART (about 87 µs per character at 115 200 baud), and the host misses an
+isochronous packet for every millisecond of that. `main.c` formats the line
+with `snprintf` and writes it a few characters per pass, only while
+`uart_is_writable()`; new diagnostic output goes through the same buffer. For
+the same reason `CFG_TUSB_DEBUG` stays 0 in `tusb_config.h`.
 
 One-shot prints during `*_init` functions are allowed and need no guard;
 init runs once, before streaming.
@@ -68,7 +69,10 @@ preserved:
 4. The single ISR `dma_handler` checks `dma_hw->ints0`, clears the matching
    bit, re-arms the just-completed channel (resetting write address and
    transfer count), and sets the corresponding `volatile bool buffer_*_ready`
-   flag.
+   flag. If the other channel's flag is still set, the chain has already
+   restarted that channel into its buffer, so the ISR clears that flag and
+   counts an overrun (`dma_audio_get_overrun_count`). At most one flag is
+   therefore set at a time, and the loop always receives buffers in order.
 5. `__dmb()` memory barriers MUST surround writes to `buffer_*_ready` in the
    ISR and reads/clears of the same flags in `dma_audio_get_ready_buffer`.
 6. The two static buffers `audio_buffer_a` and `audio_buffer_b` are

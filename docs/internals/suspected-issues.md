@@ -14,43 +14,6 @@ invalidate a constraint that cross-references it.
 
 ---
 
-## `CFG_TUSB_DEBUG` and audio stream rate {#cfg-tusb-debug-and-audio-stream-rate}
-
-**Location:** `src/tusb_config.h` (the `#undef`/`#define CFG_TUSB_DEBUG 0` block).
-
-**Code excerpt:**
-
-```c
-#ifdef CFG_TUSB_DEBUG
-#undef CFG_TUSB_DEBUG
-#endif
-#define CFG_TUSB_DEBUG 0
-```
-
-**What we suspect:** Enabling `CFG_TUSB_DEBUG >= 1` causes TinyUSB to emit
-per-transfer log output over the UART. The cost of those `printf`s blocks
-`tud_task()` for long enough to starve the audio IN stream — the host
-observes audio arriving at a fraction of its expected rate (e.g. visible
-in Audacity as the recording timeline advancing slower than wall-clock).
-To be clear: this is **not a bug** in TinyUSB, but rather a strict latency
-concern we enforce to protect the pipeline.
-
-**Why we suspect it:** The performance characteristics of `printf` over
-UART on the RP2350 (115200 baud, single-buffered) make blocking-time-per-
-transfer arithmetic plausible at the per-IN-microframe rate. The explicit
-`#undef` first defends against the SDK or build system pre-defining a
-non-zero value through compiler flags.
-
-**Reproduction status:** Unverified. Logged here for institutional memory.
-
-**Action if refuted:** If a future maintainer demonstrates that
-`CFG_TUSB_DEBUG=1` does *not* perturb the audio stream rate on a
-representative host, the `#undef`/`#define` block can be removed and
-`CFG_TUSB_DEBUG` can be left to whatever the SDK or build system sets.
-Until then the block stays in `tusb_config.h`.
-
----
-
 ## PIO frame-misalignment recovery {#pio-frame-misalignment-recovery}
 
 **Location:** `src/i2s_audio.c`, the `i2s_audio_init` target-mode body

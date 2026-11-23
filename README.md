@@ -240,21 +240,30 @@ pico-i2s-usb/
 ### Debugging
 
 Set `AUDIO_DEBUG_LOGGING` to `1` in `src/audio_config.h` to enable periodic
-UART logging of raw I2S sample values in the main loop. When enabled, one
-line is printed approximately every 1.3 seconds to minimize impact on the
-real-time audio path. Each line still blocks the main loop for about 5 ms,
-so the host misses 4–5 USB packets per line; TinyUSB's FIFO absorbs them
-and no audio is lost. The log line also includes a running `overflow=N`
-counter — the number of DMA buffers dropped because TinyUSB's `ep_in_ff`
-could not accept them. The counter also climbs whenever the host is
-connected but not recording, because `ep_in_ff` stays full between
-streams; compare its value at the start and end of a recording. During a
-healthy recording it does not change.
+UART logging in the main loop. When enabled, one line is printed
+approximately every 1.3 seconds:
+
+```text
+[Audio Data] L: 0x1A182100 | R: 0x0000F300 | overflow=38449 | overrun=0
+```
+
+- `L` and `R`: the first left and right samples of the latest DMA buffer.
+  They should change from line to line.
+- `overflow`: DMA buffers dropped because TinyUSB's FIFO was full. It also
+  climbs while the host isn't recording, so compare it at the start and end
+  of a recording; it shouldn't change during one.
+- `overrun`: DMA buffers overwritten before the main loop took them. It
+  should read 0.
+
+Logging doesn't hold up the audio path.
 
 UART output goes to UART0: TX on `GPIO 0`, RX on `GPIO 1`, 115200 baud. Read it with a Raspberry Pi Debug Probe or a USB-to-serial adapter; the Pico's own USB port carries only audio.
 
 > [!WARNING]
-> `CFG_TUSB_DEBUG` in `tusb_config.h` must remain at `0` during audio streaming. With debug level 2 enabled, the audio stream was observed to arrive at a fraction of its expected rate in Audacity. Disabling debug output resolved the issue. To be clear: this is **not a bug** in TinyUSB, but rather a latency concern. The likely cause is that TinyUSB's per-transfer log output blocks `tud_task()` on the UART long enough to starve the pipeline, but this mechanism has not been independently verified.
+> `CFG_TUSB_DEBUG` in `tusb_config.h` must stay at `0`. TinyUSB logs through
+> `printf`, which waits for the UART, so its per-transfer log lines hold up
+> USB long enough to drop audio; at debug level 2 the stream arrived at a
+> fraction of its rate. This is a latency limit, not a TinyUSB bug.
 
 ### Building from Source
 

@@ -18,4 +18,8 @@ bool dma_audio_get_ready_buffer(uint32_t **ready_buffer);
 // True while a filled buffer waits for dma_audio_get_ready_buffer().
 bool dma_audio_buffer_pending(void);
 
+// Running count of filled buffers dropped because the main loop took neither
+// before the next one filled. Diagnostic only; used under AUDIO_DEBUG_LOGGING.
+uint32_t dma_audio_get_overrun_count(void);
+
 #endif // DMA_AUDIO_H

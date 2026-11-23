@@ -116,6 +116,7 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p_request,
                                  uint8_t *buf) {
     (void)rhport;
+    (void)p_request;
     (void)buf;
     // STALL all unsupported SET requests.
     // NOTE: This correctly rejects OS sample rate changes (SAM_FREQ) because

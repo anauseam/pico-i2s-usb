@@ -49,6 +49,9 @@ Examples in the existing code:
 
 - `buffer_a_ready`, `buffer_b_ready` in `dma_audio.c` — written in ISR,
   read in main loop.
+- `overrun_count` in `dma_audio.c` — incremented in the ISR when a filled
+  buffer is overwritten, read by `dma_audio_get_overrun_count` from the main
+  loop diagnostic printer.
 - `overflow_count` in `usb_audio.c` — incremented inside
   `usb_audio_submit_buffer` on each dropped buffer, read by
   `usb_audio_get_overflow_count` from the main loop diagnostic printer.
