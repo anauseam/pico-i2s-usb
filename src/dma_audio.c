@@ -86,3 +86,7 @@ bool dma_audio_get_ready_buffer(uint32_t **ready_buffer) {
     }
     return false;
 }
+
+bool dma_audio_buffer_pending(void) {
+    return buffer_a_ready || buffer_b_ready;
+}

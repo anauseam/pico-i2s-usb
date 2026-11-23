@@ -1,4 +1,5 @@
 #include "hardware/clocks.h"
+#include "hardware/sync.h"
 #include "pico/stdlib.h" // IWYU pragma: keep
 #include <stdio.h>
 
@@ -59,9 +60,13 @@ int main() {
 #endif
         }
 
-        // Put CPU to sleep to save power; wakes automatically on next DMA interrupt
-        // or USB interrupt.
-        __asm volatile("wfi");
+        // Interrupts stay off from the check to the sleep: one that arrives in between
+        // still ends the WFI. Every interrupt that leaves work for this loop belongs here.
+        uint32_t irq = save_and_disable_interrupts();
+        if (!usb_audio_event_pending() && !dma_audio_buffer_pending()) {
+            __asm volatile("wfi");
+        }
+        restore_interrupts_from_disabled(irq);
     }
 
     return 0;

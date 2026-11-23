@@ -9,7 +9,9 @@ The "hot path" is the set of functions that execute on every audio buffer or
 every USB microframe. They are:
 
 - `dma_handler` in `src/dma_audio.c` (DMA completion ISR).
-- `dma_audio_get_ready_buffer` in `src/dma_audio.c`.
+- `dma_audio_get_ready_buffer` and `dma_audio_buffer_pending` in
+  `src/dma_audio.c`.
+- `usb_audio_event_pending` in `src/usb_audio.c`.
 - `usb_audio_submit_buffer` in `src/usb_audio.c` (writes one DMA buffer to
   TinyUSB's `ep_in_ff`, or drops it on overflow).
 - The body of `while (1)` in `src/main.c`.
@@ -30,8 +32,15 @@ The following should be avoided inside any function listed in 2.1 to prevent stu
 - Unbounded loops on hardware status registers (any `while (!flag) {}`).
 - Unconditional `printf`. Use `#if AUDIO_DEBUG_LOGGING` guards.
 
-The only sanctioned wait in the conductor loop is `__asm volatile("wfi")` at
-the bottom of `while (1)` in `main.c`. Do not remove it.
+The only sanctioned wait in the conductor loop is the `wfi` at the bottom of
+`while (1)` in `main.c`. It runs with interrupts disabled, and only when no
+USB event (`usb_audio_event_pending`) and no DMA buffer
+(`dma_audio_buffer_pending`) is waiting; an interrupt that arrives after that
+check still ends the `wfi`. A bare `wfi` can sleep through an event that
+arrived just after `usb_audio_task()` returned. Nothing else wakes the core
+until the next DMA interrupt, up to one buffer later, and the isochronous IN
+packets for those USB frames go unsent. Any new interrupt that leaves work for
+the loop needs its own check in that condition.
 
 ## 2.3 — Diagnostic logging is gated
 
@@ -39,7 +48,11 @@ Every `printf` in a hot-path function should be wrapped in
 `#if AUDIO_DEBUG_LOGGING ... #endif` and emitted at a human-readable rate.
 The current pattern is a modulo divider on a buffer counter (≈ 1.3 s
 between prints in `main.c`). Maintain that pattern: per-buffer or
-per-microframe prints will disrupt the timing.
+per-microframe prints will disrupt the timing. Even at that rate each line
+blocks the loop for about 5 ms at 115 200 baud, and the host misses 4–5
+isochronous IN packets; `ep_in_ff` absorbs the gap. A line that blocks for
+longer than one DMA buffer period lets a ping-pong buffer be overwritten
+before the loop takes it, which no counter records.
 
 One-shot prints during `*_init` functions are allowed and need no guard;
 init runs once, before streaming.

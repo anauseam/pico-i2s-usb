@@ -1,6 +1,7 @@
 #ifndef USB_AUDIO_H
 #define USB_AUDIO_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // Initializes TinyUSB stack and audio interface
@@ -8,6 +9,9 @@ void usb_audio_init(void);
 
 // TinyUSB device task, must be called in main loop
 void usb_audio_task(void);
+
+// True while a USB event waits for usb_audio_task().
+bool usb_audio_event_pending(void);
 
 // Hands one full DMA buffer (n_words 32-bit samples, byte length must be a
 // multiple of 4 by construction) to TinyUSB's ep_in_ff in a single write.

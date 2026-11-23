@@ -23,6 +23,10 @@ void usb_audio_task(void) {
     tud_task();
 }
 
+bool usb_audio_event_pending(void) {
+    return tud_task_event_ready();
+}
+
 void usb_audio_submit_buffer(uint32_t *buffer, uint32_t n_words) {
     // If unplugged or not yet mounted, drop silently. Not counted as overflow
     // because the cause is "no host", not "host is too slow".

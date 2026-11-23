@@ -15,4 +15,7 @@ void dma_audio_start(void);
 // If true, populates `ready_buffer` with the pointer to the fresh audio array.
 bool dma_audio_get_ready_buffer(uint32_t **ready_buffer);
 
+// True while a filled buffer waits for dma_audio_get_ready_buffer().
+bool dma_audio_buffer_pending(void);
+
 #endif // DMA_AUDIO_H

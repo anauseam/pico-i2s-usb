@@ -242,7 +242,9 @@ pico-i2s-usb/
 Set `AUDIO_DEBUG_LOGGING` to `1` in `src/audio_config.h` to enable periodic
 UART logging of raw I2S sample values in the main loop. When enabled, one
 line is printed approximately every 1.3 seconds to minimize impact on the
-real-time audio path. The log line also includes a running `overflow=N`
+real-time audio path. Each line still blocks the main loop for about 5 ms,
+so the host misses 4–5 USB packets per line; TinyUSB's FIFO absorbs them
+and no audio is lost. The log line also includes a running `overflow=N`
 counter — the number of DMA buffers dropped because TinyUSB's `ep_in_ff`
 could not accept them. The counter also climbs whenever the host is
 connected but not recording, because `ep_in_ff` stays full between
