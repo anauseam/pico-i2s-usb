@@ -12,7 +12,7 @@ tusb_desc_device_t const desc_device = {.bLength = sizeof(tusb_desc_device_t),
                                         .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
                                         .idVendor = 0xCafe,  // Example Vendor ID
                                         .idProduct = 0x4800, // Example Product ID
-                                        .bcdDevice = 0x0100,
+                                        .bcdDevice = 0x0020,
                                         .iManufacturer = 0x01,
                                         .iProduct = 0x02,
                                         .iSerialNumber = 0x03,
