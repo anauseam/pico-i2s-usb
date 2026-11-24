@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.1
         with:
           submodules: true
 
@@ -44,3 +44,5 @@ jobs:
             build/*.elf
             build/*.hex
           generate_release_notes: true
+          # Published by hand once this exact build passes the hardware test.
+          draft: true
