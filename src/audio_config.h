@@ -79,10 +79,10 @@
 // =============================================================================
 
 #ifndef I2S_ROLE
-#define I2S_ROLE I2S_ROLE_TARGET
+#define I2S_ROLE I2S_ROLE_TARGET // I2S_ROLE_TARGET or I2S_ROLE_CONTROLLER (not implemented yet)
 #endif
 #ifndef MCLK_SOURCE
-#define MCLK_SOURCE MCLK_SOURCE_EXTERNAL
+#define MCLK_SOURCE MCLK_SOURCE_PICO // MCLK_SOURCE_PICO or MCLK_SOURCE_EXTERNAL
 #endif
 
 // =============================================================================
@@ -109,7 +109,7 @@
 // =============================================================================
 
 #ifndef CODEC
-#define CODEC CODEC_NONE
+#define CODEC CODEC_NONE // CODEC_NONE, CODEC_SGTL5000 or CODEC_TAA5212 (not implemented yet)
 #endif
 
 // =============================================================================

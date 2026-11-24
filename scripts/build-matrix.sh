@@ -30,12 +30,12 @@ build_case() { NAMES+=("$1") PLATFORMS+=("$2") SETTINGS+=("$3") EXPECTED+=("") F
 fail_case() { NAMES+=("$1") PLATFORMS+=("$2") SETTINGS+=("$3") EXPECTED+=("$4") FORBIDDEN+=("${5:-}") TEXT+=(""); }
 
 # Configurations that must build.
-build_case default rp2350 "" "!Generating MCLK"
+build_case default rp2350 "" "Generating MCLK"
 build_case default-riscv rp2350-riscv ""
 build_case debug rp2350 "AUDIO_DEBUG_LOGGING=1" "[Audio Data]"
-build_case mclk-pico rp2350 "MCLK_SOURCE=MCLK_SOURCE_PICO" "Generating MCLK"
+build_case mclk-external rp2350 "MCLK_SOURCE=MCLK_SOURCE_EXTERNAL" "!Generating MCLK"
 build_case rate-96k rp2350 "AUDIO_RATES=AUDIO_RATE_96000"
-build_case rate-44k1 rp2350 "AUDIO_RATES=AUDIO_RATE_44100"
+build_case rate-44k1 rp2350 "MCLK_SOURCE=MCLK_SOURCE_EXTERNAL;AUDIO_RATES=AUDIO_RATE_44100"
 build_case tin-can-pins rp2350 "PIN_I2S_DIN=18;PIN_I2S_BCLK=19;PIN_I2S_LRCK=20;MCLK_SOURCE=MCLK_SOURCE_PICO;PIN_MCLK=21;PIN_I2C_SDA=16;PIN_I2C_SCL=17"
 build_case loose-pins rp2350 "PIN_I2S_BCLK=6;PIN_I2S_LRCK=9;MCLK_SOURCE=MCLK_SOURCE_PICO;PIN_MCLK=15"
 build_case console-moved rp2350 "PICO_DEFAULT_UART=1;PICO_DEFAULT_UART_TX_PIN=4;PICO_DEFAULT_UART_RX_PIN=5;PIN_I2S_DIN=0"
@@ -79,7 +79,7 @@ fail_case two-rates rp2350 "AUDIO_RATES=AUDIO_RATE_48000|AUDIO_RATE_96000" \
     "CODEC_NONE (a pin-strapped ADC) runs at one rate"
 fail_case 44k1-pico-mclk rp2350 "MCLK_SOURCE=MCLK_SOURCE_PICO;AUDIO_RATES=AUDIO_RATE_44100" \
     "AUDIO_RATE_44100 needs MCLK_SOURCE_EXTERNAL"
-fail_case async-mclk rp2350 "I2S_ROLE=I2S_ROLE_CONTROLLER" \
+fail_case async-mclk rp2350 "I2S_ROLE=I2S_ROLE_CONTROLLER;MCLK_SOURCE=MCLK_SOURCE_EXTERNAL" \
     "With I2S_ROLE_CONTROLLER, MCLK_SOURCE can't be MCLK_SOURCE_EXTERNAL"
 fail_case mclk-pin-unset rp2350 "MCLK_SOURCE=MCLK_SOURCE_PICO;PIN_MCLK=PIN_NONE" \
     "MCLK_SOURCE_PICO needs PIN_MCLK"
