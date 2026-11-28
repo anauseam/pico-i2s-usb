@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
 
       - name: Install ARM GNU Toolchain
         run: |
@@ -19,8 +21,8 @@ jobs:
 
       - name: Setup Raspberry Pi Pico SDK
         run: |
-          # The project uses Pico SDK 2.2.0 (from CMakeLists.txt)
-          git clone --depth 1 --branch 2.2.0 https://github.com/raspberrypi/pico-sdk.git
+          # The project uses Pico SDK 2.3.1 (from CMakeLists.txt)
+          git clone --depth 1 --branch 2.3.1 https://github.com/raspberrypi/pico-sdk.git
           cd pico-sdk
           git submodule update --init
           echo "PICO_SDK_PATH=$(pwd)" >> $GITHUB_ENV
@@ -29,7 +31,7 @@ jobs:
       - name: Share pioasm and picotool between cases
         run: |
           cmake -S "$PICO_SDK_PATH/tools/pioasm" -B "$RUNNER_TEMP/pioasm-build" \
-            -DPIOASM_FLAT_INSTALL=1 -DPIOASM_VERSION_STRING=2.2.0 \
+            -DPIOASM_FLAT_INSTALL=1 -DPIOASM_VERSION_STRING=2.3.1 \
             -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/pico-tools"
           cmake --build "$RUNNER_TEMP/pioasm-build" --target install
           echo "pioasm_DIR=$RUNNER_TEMP/pico-tools/pioasm" >> $GITHUB_ENV

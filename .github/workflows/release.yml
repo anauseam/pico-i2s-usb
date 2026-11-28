@@ -25,8 +25,8 @@ jobs:
 
       - name: Setup Raspberry Pi Pico SDK
         run: |
-          # The project uses Pico SDK 2.2.0 (from CMakeLists.txt)
-          git clone --depth 1 --branch 2.2.0 https://github.com/raspberrypi/pico-sdk.git
+          # The project uses Pico SDK 2.3.1 (from CMakeLists.txt)
+          git clone --depth 1 --branch 2.3.1 https://github.com/raspberrypi/pico-sdk.git
           cd pico-sdk
           git submodule update --init
           echo "PICO_SDK_PATH=$(pwd)" >> $GITHUB_ENV

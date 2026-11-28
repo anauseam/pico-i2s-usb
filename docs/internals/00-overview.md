@@ -41,12 +41,10 @@ docs/
     ├── 02-audio-pipeline.md   real-time hot path constraints
     ├── 03-usb-stack.md        TinyUSB / UAC2 contract
     ├── 04-configuration.md    centralization of tunables
-    ├── 05-style.md            code style and language rules
-    ├── 06-workarounds.md      reproduced workarounds that should stay
-    └── suspected-issues.md    descriptive notes on unreproduced defensive code
+    └── 05-style.md            code style and language rules
 ```
 
-Each architecture file is self-contained. `suspected-issues.md` is descriptive only and provides historical context for certain workarounds.
+Each architecture file is self-contained.
 
 ## Source-of-truth file map
 
@@ -78,7 +76,3 @@ These principles are repeated in the more specific doc files but are listed here
 3. All user-tunable configuration lives in `src/audio_config.h`.
 4. The ADC is the I2S Controller and the Pico is the I2S Target. The
    Pico-as-Controller role is not implemented yet.
-5. Every workaround in `06-workarounds.md` (reproduced) and
-   every defensive block referenced from `suspected-issues.md`
-   (unreproduced) should stay with its block comment intact, unless a commit
-   message explains the upstream fix or refutes the underlying suspicion.

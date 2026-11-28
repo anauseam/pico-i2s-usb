@@ -6,7 +6,7 @@ audible dropouts, USB underruns, or hardware lockup.
 ## 2.1 — Hot-path function inventory
 
 The "hot path" is the set of functions that execute on every audio buffer or
-every USB microframe. They are:
+every USB frame. They are:
 
 - `dma_handler` in `src/dma_audio.c` (DMA completion ISR).
 - `dma_audio_get_ready_buffer` and `dma_audio_buffer_pending` in
@@ -103,15 +103,11 @@ ends at `tud_audio_write` with a 4-aligned byte length.
 
 Adding a second application-side FIFO between the DMA and TinyUSB is highly discouraged, as it can introduce byte-alignment hazards that cause audible distortion.
 
-## 2.6 — Rate matching is implicit via `ep_in_ff` packet-size variation
+## 2.6 — Rate matching is TinyUSB's flow control
 
-Rate matching between the I2S ADC clock and the USB host clock is
-performed implicitly by TinyUSB's `audiod_tx_done_cb`, which calls
-`tu_min16(tu_fifo_count, ep_in_sz)` to decide how many bytes to ship per
-IN packet (in `tinyusb/src/class/audio/audio_device.c`). The resulting
-variation in IN packet size *is* the rate signal required by UAC2
-asynchronous IN streams; the host's UAC2 driver averages these packet
-sizes over many frames to derive the device's true sample rate.
+Rate matching between the I2S ADC clock and the USB host clock is done by TinyUSB's flow control (`audiod_tx_packet_size` in `lib/tinyusb/src/class/audio/audio_device.c`). It ships the nominal number of frames per IN packet (48 at 48 kHz), or one frame fewer or more when the `ep_in_ff` fill level drifts below or above half the FIFO. That variation in IN packet size *is* the rate signal required by UAC2 asynchronous IN streams; the host's UAC2 driver averages packet sizes over many frames to derive the device's true sample rate. Holding the FIFO half full adds about 2048 bytes (5.3 ms at 48 kHz) of latency.
+
+TinyUSB takes the nominal rate from the `GET_CUR(SAM_FREQ)` reply, so that reply must go through `tud_audio_buffer_and_schedule_control_xfer` (see `03-usb-stack.md §3.4`).
 
 The application is responsible only for:
 
@@ -123,17 +119,16 @@ The application is responsible only for:
    counter (`usb_audio_get_overflow_count`).
 3. Never attempting partial writes — partial writes split a single DMA
    buffer across two IN packets at non-sample-aligned boundaries.
+4. Emptying `ep_in_ff` when the host starts streaming (`tud_audio_set_itf_cb`, any alternate setting other than 0). TinyUSB empties it only when the stream stops (`audio_device.c:1089-1098`), and the application keeps writing while the stream is stopped, so without this the first ~10 ms of every recording would be old audio.
 
 The application should not:
 
 - Implement an `is_streaming` pre-roll latch.
-- Modulate the number of words written based on `tu_fifo_count`
-  ("FIFO-fill hysteresis"). This is overcorrection: TinyUSB already
-  varies packet size by virtue of how the FIFO drains.
+- Modulate the number of words written based on `tu_fifo_count` ("FIFO-fill hysteresis"). This is overcorrection: TinyUSB's flow control already adjusts packet size from the FIFO level.
 - Maintain any sample counter for rate-feedback purposes.
 
 These would all be application-level rate-matching code that would fight
-TinyUSB's implicit rate signal.
+TinyUSB's rate signal.
 
 If a future host is observed to *not* properly average packet sizes
 (i.e. it requires an explicit feedback EP), please avoid adding an application-side
@@ -148,5 +143,5 @@ code — the UAC2 descriptors in `usb_descriptors.c` tell the host how to
 interpret the container (`_nBytesPerSample=4`, `_nBitsUsedPerSample=24`).
 
 Changing one side (PIO shift count, descriptor sample size, or
-`CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX`) requires changing all three
+`USB_BYTES_PER_SAMPLE` in `tusb_config.h`) requires changing all three
 in the same commit.

@@ -31,11 +31,6 @@ void i2s_audio_init(PIO *pio_out, uint *sm_out) {
 
     printf("Starting I2S as TARGET (Expecting %d Hz from master)...\n", SAMPLE_RATE);
 
-    // ARCHITECTURAL LIMITATION: Currently, there is no documented recovery path or
-    // watchdog for the PIO state machine if a BCLK/LRCK glitch causes frame misalignment.
-    // If the external clock stutters, the SM may permanently offset the 32-bit frames.
-    // Background: see docs/internals/suspected-issues.md#pio-frame-misalignment-recovery
-
     offset = pio_add_program(*pio_out, &i2s_rx_target_program);
     i2s_rx_target_program_init(*pio_out, *sm_out, offset, PIN_I2S_DIN, PIN_I2S_BCLK, PIN_I2S_LRCK);
 }

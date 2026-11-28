@@ -3,48 +3,70 @@
 
 ; Act as I2S target (slave), receiving data from an external controller (PCM1808).
 ; The external controller provides BCLK and LRCK. We read DIN, BCLK, and LRCK.
+; Each `wait gpio 0` is a placeholder: i2s_rx_target_program_init (below) writes in the
+; BCLK or LRCK pin that its label names.
 
 public entry_point:
 ; --- INITIAL FRAME SYNC ---
 
 ; 1. Wait for the Right channel (LRCK = 1) to ensure we don't start mid-Left
 public wait_lrck_high:
-    wait 1 gpio 0       ; [PATCHED IN C TO LRCK PIN]
-    
+    wait 1 gpio 0
+
 ; 2. Wait for the Left channel to begin (LRCK = 0)
 public wait_lrck_low:
-    wait 0 gpio 0       ; [PATCHED IN C TO LRCK PIN]
+    wait 0 gpio 0
 
 ; LRCK just went low. This is the 1-bit delay period.
 ; 3. Wait for BCLK high phase of the delay bit
 public wait_bclk_high_sync:
-    wait 1 gpio 0       ; [PATCHED IN C TO BCLK PIN]
-    
+    wait 1 gpio 0
+
 ; 4. Wait for BCLK to fall. PCM1808 shifts out the Left MSB here.
 public wait_bclk_low_sync:
-    wait 0 gpio 0       ; [PATCHED IN C TO BCLK PIN]
-    
+    wait 0 gpio 0
+
 .wrap_target
 
 left_channel:
     set  x, 31          ; Initialize loop counter for 32 bits
 left_loop:
 public wait_bclk_high_l:
-    wait 1 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    wait 1 gpio 0
     in   pins, 1        ; Sample stable data on BCLK rising edge
 public wait_bclk_low_l:
-    wait 0 gpio 0       ; [PATCHED IN C TO BCLK PIN]
+    wait 0 gpio 0
     jmp  x-- left_loop  ; Loop until 32 bits are read
-    
+
+; The Right word's first 31 bits. Its last bit comes one BCLK after LRCK falls (the I2S
+; 1-bit delay), so it is read after the frame sync below.
 right_channel:
-    set  x, 31          ; Initialize loop counter for 32 bits
+    set  x, 30
 right_loop:
-public wait_bclk_high_r:
-    wait 1 gpio 0       ; [PATCHED IN C TO BCLK PIN]
-    in   pins, 1        ; Sample stable data on BCLK rising edge
 public wait_bclk_low_r:
-    wait 0 gpio 0       ; [PATCHED IN C TO BCLK PIN]
-    jmp  x-- right_loop ; Loop until 32 bits are read
+    wait 0 gpio 0
+public wait_bclk_high_r:
+    wait 1 gpio 0
+    in   pins, 1
+    jmp  x-- right_loop
+
+; --- FRAME SYNC, EVERY FRAME ---
+; In step, LRCK is high here and falls on the next BCLK falling edge. After an extra or
+; missing BCLK edge it isn't: then the waits below skip ahead to the next falling LRCK edge,
+; so a glitch corrupts one frame instead of every frame after it. Each frame still shifts
+; in exactly 64 bits, so Left and Right stay paired.
+public wait_lrck_high_frame:
+    wait 1 gpio 0
+public wait_lrck_low_frame:
+    wait 0 gpio 0
+; LRCK may fall up to 10 ns before BCLK does (PCM1808 datasheet p. 7, t(CKLR)).
+public wait_bclk_low_frame:
+    wait 0 gpio 0
+public wait_bclk_high_last:
+    wait 1 gpio 0
+    in   pins, 1        ; The Right word's last bit
+public wait_bclk_low_last:
+    wait 0 gpio 0       ; PCM1808 shifts out the next Left MSB here.
 
 .wrap
 
@@ -52,7 +74,7 @@ public wait_bclk_low_r:
 static inline void i2s_rx_target_program_init(PIO pio, uint sm, uint offset, uint data_pin,
                                               uint bclk_pin, uint lrck_pin) {
     pio_sm_config sm_config = i2s_rx_target_program_get_default_config(offset);
-    
+
     sm_config_set_in_pins(&sm_config, data_pin);
     sm_config_set_in_shift(&sm_config, false, true, 32); // Shift left (MSB first), Autopush @ 32 bits
     sm_config_set_fifo_join(&sm_config, PIO_FIFO_JOIN_RX);
@@ -72,17 +94,23 @@ static inline void i2s_rx_target_program_init(PIO pio, uint sm, uint offset, uin
     // This allows you to wire BCLK and LRCK to ANY pins without restriction!
     pio->instr_mem[offset + i2s_rx_target_offset_wait_lrck_high] = pio_encode_wait_gpio(true, lrck_pin);
     pio->instr_mem[offset + i2s_rx_target_offset_wait_lrck_low]  = pio_encode_wait_gpio(false, lrck_pin);
-    
+
     pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_sync] = pio_encode_wait_gpio(true, bclk_pin);
     pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_sync]  = pio_encode_wait_gpio(false, bclk_pin);
-    
+
     pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_l] = pio_encode_wait_gpio(true, bclk_pin);
     pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_l]  = pio_encode_wait_gpio(false, bclk_pin);
-    
-    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_r] = pio_encode_wait_gpio(true, bclk_pin);
-    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_r]  = pio_encode_wait_gpio(false, bclk_pin);
 
-    // The target should run as fast as possible (un-divided sys clock) 
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_r]  = pio_encode_wait_gpio(false, bclk_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_r] = pio_encode_wait_gpio(true, bclk_pin);
+
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_lrck_high_frame] = pio_encode_wait_gpio(true, lrck_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_lrck_low_frame]  = pio_encode_wait_gpio(false, lrck_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_frame]  = pio_encode_wait_gpio(false, bclk_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_high_last] = pio_encode_wait_gpio(true, bclk_pin);
+    pio->instr_mem[offset + i2s_rx_target_offset_wait_bclk_low_last]  = pio_encode_wait_gpio(false, bclk_pin);
+
+    // The target should run as fast as possible (un-divided sys clock)
     // to catch external clock edges instantly.
     sm_config_set_clkdiv(&sm_config, 1.0f);
 

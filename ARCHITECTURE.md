@@ -3,9 +3,7 @@
 This document is the design-rationale companion to the [README](README.md).
 The README answers "how do I use this?"; this file answers "why is it built
 this way?". For technical constraints and hardware contracts,
-see [`docs/internals/`](docs/internals/). For descriptive notes on
-unreproduced defensive code, see
-[`docs/internals/suspected-issues.md`](docs/internals/suspected-issues.md).
+see [`docs/internals/`](docs/internals/).
 
 ## 1. Why this firmware exists
 
@@ -23,12 +21,7 @@ A driverless UAC2 microphone has three hard constraints:
    device. Any code path that requires a configuration utility on the
    host defeats the purpose.
 
-The RP2350 + TinyUSB stack is well-suited to all three, with two
-caveats: the RP2350 USB peripheral has documented oddities around
-isochronous-endpoint reactivation, and TinyUSB's UAC2 implementation
-makes assumptions about host control-request ordering that the Linux
-UAC2 driver violates. Both are handled by the workarounds documented
-in [`docs/internals/06-workarounds.md`](docs/internals/06-workarounds.md).
+The RP2350 + TinyUSB stack is well-suited to all three.
 
 ## 2. Data pipeline narrative
 
@@ -55,7 +48,7 @@ Conductor loop in src/main.c
 TinyUSB ep_in_ff (4096 bytes; src/tusb_config.h sets the size)
     │
     │  Isochronous IN, host polls every 1 ms;
-    │  packet size varies per microframe — that is the UAC2 rate signal
+    │  47, 48 or 49 frames per packet — the variation is the UAC2 rate signal
     ▼
 USB host (Linux / macOS / Windows 11)
 ```
@@ -68,13 +61,7 @@ Three properties are worth pulling out:
   is given to `tud_audio_write`, it is owned by TinyUSB. There is no
   second application FIFO between `dma_audio` and TinyUSB. This is
   binding per [`docs/internals/02-audio-pipeline.md`](docs/internals/02-audio-pipeline.md).
-- **No application-side rate matching.** TinyUSB's `audiod_tx_done_cb`
-  decides how many bytes to ship per IN packet by reading the current
-  `ep_in_ff` fill level. The resulting variation in packet size is the
-  rate signal that UAC2 async-IN streams use. The application does not
-  modulate the number of bytes it writes per DMA buffer; that would
-  fight TinyUSB's implicit signal. See
-  [`docs/internals/02-audio-pipeline.md`](docs/internals/02-audio-pipeline.md).
+- **No application-side rate matching.** TinyUSB's flow control decides how many frames to ship per IN packet: 48, or 47 or 49 when the `ep_in_ff` fill level drifts from its target of half the FIFO. The resulting variation in packet size is the rate signal that UAC2 async-IN streams use. The application does not modulate the number of bytes it writes per DMA buffer; that would fight TinyUSB's signal. See [`docs/internals/02-audio-pipeline.md`](docs/internals/02-audio-pipeline.md).
 - **No partial writes.** If TinyUSB's `ep_in_ff` does not have room for
   one full DMA buffer, the conductor drops the buffer entirely and
   increments `overflow_count`. A partial write would split a 32-bit
@@ -120,7 +107,7 @@ The ADC produces samples at exactly its hardware clock rate. The host
 polls the device once per USB frame (1 ms, since this is Full-Speed
 USB). If the two rates were identical, exactly `SAMPLE_RATE / 1000`
 samples would arrive in `ep_in_ff` between every two host polls and
-the device could ship a fixed-size packet every microframe. They are
+the device could ship a fixed-size packet every frame. They are
 not identical (the host's USB clock and the device's I2S clock are
 free-running with respect to each other), so the device must indicate
 its actual rate to the host.
@@ -132,10 +119,7 @@ data IN endpoint itself: by varying the packet size from frame to
 frame, the device communicates "I currently have N samples ready",
 which the host averages over many frames to derive the true rate.
 
-This firmware uses the second method. TinyUSB's `audiod_tx_done_cb`
-ships `min(tu_fifo_count, ep_in_sz)` bytes per IN packet. The packet
-size therefore *is* the device's instantaneous estimate of its own
-rate. No application-side code is involved.
+This firmware uses the second method, through TinyUSB's flow control. TinyUSB learns the nominal rate from the device's own `GET_CUR(SAM_FREQ)` reply and ships 48 frames per packet at 48 kHz. When the `ep_in_ff` level drifts below or above its target of half the FIFO, it ships one packet of 47 or 49 frames and then waits 10 frames before adjusting again (`audio_device.c:1863-1895`, target set at `:1195`). The ADC's clock fills the FIFO, so the share of 47- and 49-frame packets *is* the device's rate signal. No application-side code is involved.
 
 Implementing the first method (explicit feedback EP) would require
 upstream TinyUSB support — currently TinyUSB supports feedback
@@ -186,7 +170,7 @@ integer division of any clock the 12 MHz crystal can produce.
 The firmware implements one I2S role: the ADC drives BCLK and LRCK from
 its MCLK, and the Pico is the I2S Target. The receiver in
 `src/i2s_rx_target.pio` runs at the full `clk_sys` and follows the ADC's
-edges. The Pico-as-Controller role is not implemented yet;
+edges. It lines up with LRCK's falling edge at the end of every frame, so an extra or missing BCLK edge (a glitch, or the ADC restarting its clocks) corrupts at most one frame. The Pico-as-Controller role is not implemented yet;
 `src/i2s_rx_controller.pio` holds a controller program and is not built.
 
 An ADC running from an external oscillator must be the controller in any
@@ -220,23 +204,6 @@ in rough order of likelihood:
 None of these are confirmed. Until a measurement campaign
 distinguishes between them, no code change is warranted.
 
-### 4.2 PIO frame-misalignment recovery is unimplemented
-
-The PIO target-mode program performs an LRCK-edge sync sequence on
-init. After init, the program runs in steady-state with no further
-alignment checks. A BCLK or LRCK glitch during streaming (brief
-power-supply dropout to the ADC, ESD event) could leave the SM
-offset by 1–31 bits, producing corrupted samples until the device
-is power-cycled.
-
-This is a known architectural gap, not a bug to fix. Implementing
-recovery would require a watchdog timer on the PIO RX FIFO and a
-re-sync routine. The complexity is not justified for the use cases
-this firmware is designed for.
-
-See
-[`docs/internals/suspected-issues.md#pio-frame-misalignment-recovery`](docs/internals/suspected-issues.md#pio-frame-misalignment-recovery).
-
 ## 5. Pointers — where to look for what
 
 | If you want to know…                                  | Look at…                                                                   |
@@ -244,6 +211,5 @@ See
 | how to build / wire / install                         | [README.md](README.md)                                                     |
 | how to set the sample rate, pin map, debug flag, MCLK | [`src/audio_config.h`](src/audio_config.h)                                 |
 | what the real-time constraints are                    | [`docs/internals/`](docs/internals/)                                       |
-| what defensive code is in place and why (suspected)   | [`docs/internals/suspected-issues.md`](docs/internals/suspected-issues.md) |
 | how to contribute (human or AI)                       | [CONTRIBUTING.md](CONTRIBUTING.md)                                         |
 | the licensed terms                                    | [LICENSE](LICENSE)                                                         |

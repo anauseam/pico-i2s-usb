@@ -3,9 +3,6 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 
-#include "hardware/regs/usb.h"    // IWYU pragma: keep
-#include "hardware/structs/usb.h" // IWYU pragma: keep
-
 // --- DIAGNOSTIC COUNTER ---
 // Incremented when usb_audio_submit_buffer drops a DMA buffer because the
 // TinyUSB ep_in_ff FIFO does not have room for the full write.
@@ -74,35 +71,43 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 
     // Clock Source unit
     if (entityID == UAC2_ENTITY_CLOCK_SOURCE) {
-        if (ctrlSel == AUDIO_CS_CTRL_SAM_FREQ) {
-            if (p_request->bRequest == AUDIO_CS_REQ_CUR) {
+        if (ctrlSel == AUDIO20_CS_CTRL_SAM_FREQ) {
+            if (p_request->bRequest == AUDIO20_CS_REQ_CUR) {
+                // TinyUSB's flow control takes the stream's sample rate from this reply:
+                // Linux never sends SET_CUR to a read-only clock.
                 static uint32_t sampFreq = SAMPLE_RATE;
-                return tud_control_xfer(rhport, p_request, &sampFreq, sizeof(sampFreq));
-            } else if (p_request->bRequest == AUDIO_CS_REQ_RANGE) {
-                static audio_control_range_4_n_t(1)
+                return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &sampFreq,
+                                                                  sizeof(sampFreq));
+            } else if (p_request->bRequest == AUDIO20_CS_REQ_RANGE) {
+                static audio20_control_range_4_n_t(1)
                     range = {.wNumSubRanges = 1,
                              .subrange[0] = {.bMin = SAMPLE_RATE, .bMax = SAMPLE_RATE, .bRes = 0}};
-                return tud_control_xfer(rhport, p_request, &range, sizeof(range));
+                return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &range,
+                                                                  sizeof(range));
             }
-        } else if (ctrlSel == AUDIO_CS_CTRL_CLK_VALID) {
-            static audio_control_cur_1_t cur_valid = {.bCur = 1};
-            return tud_control_xfer(rhport, p_request, &cur_valid, sizeof(cur_valid));
+        } else if (ctrlSel == AUDIO20_CS_CTRL_CLK_VALID) {
+            static audio20_control_cur_1_t cur_valid = {.bCur = 1};
+            return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &cur_valid,
+                                                              sizeof(cur_valid));
         }
     }
 
     // Feature unit - Dummy responses to keep host happy
     if (entityID == UAC2_ENTITY_FEATURE_UNIT) {
-        if (ctrlSel == AUDIO_FU_CTRL_MUTE && p_request->bRequest == AUDIO_CS_REQ_CUR) {
+        if (ctrlSel == AUDIO20_FU_CTRL_MUTE && p_request->bRequest == AUDIO20_CS_REQ_CUR) {
             static uint8_t mute = 0;
-            return tud_control_xfer(rhport, p_request, &mute, sizeof(mute));
-        } else if (ctrlSel == AUDIO_FU_CTRL_VOLUME) {
-            if (p_request->bRequest == AUDIO_CS_REQ_CUR) {
+            return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &mute,
+                                                              sizeof(mute));
+        } else if (ctrlSel == AUDIO20_FU_CTRL_VOLUME) {
+            if (p_request->bRequest == AUDIO20_CS_REQ_CUR) {
                 static uint16_t volume = 0;
-                return tud_control_xfer(rhport, p_request, &volume, sizeof(volume));
-            } else if (p_request->bRequest == AUDIO_CS_REQ_RANGE) {
-                static audio_control_range_2_n_t(1)
+                return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &volume,
+                                                                  sizeof(volume));
+            } else if (p_request->bRequest == AUDIO20_CS_REQ_RANGE) {
+                static audio20_control_range_2_n_t(1)
                     range = {.wNumSubRanges = 1, .subrange[0] = {.bMin = 0, .bMax = 0, .bRes = 0}};
-                return tud_control_xfer(rhport, p_request, &range, sizeof(range));
+                return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &range,
+                                                                  sizeof(range));
             }
         }
     }
@@ -126,37 +131,10 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 
 bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
     (void)rhport;
-    (void)p_request;
-    // No application-side stream state to reset on Alt change: the application
-    // owns no FIFO and no streaming latch. TinyUSB's ep_in_ff is implicitly
-    // drained by host polling; whatever stale samples remain at Alt 1 entry
-    // will be flushed within a few frames at the current rate (~1500 bytes /
-    // 768 bytes/frame ≈ 2 ms of pre-roll).
-    // See docs/internals/02-audio-pipeline.md,
-    return true;
-}
-
-bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
-    (void)rhport;
-    (void)p_request;
-
-    // Workaround: TinyUSB on RP2040/2350 skips closing ISO endpoints because
-    // of TUP_DCD_EDPT_ISO_ALLOC. If the host requests Alt 0, the hardware Buffer
-    // Control register is left with USB_BUF_CTRL_AVAIL set. When the host
-    // requests Alt 1 again, TinyUSB attempts to set AVAIL and panics
-    // ("ep 81 was already available"). As a workaround, we manually clear the
-    // AVAIL and FULL bits for the audio endpoint.
-    // See docs/internals/06-workarounds.md,
-    //     docs/internals/03-usb-stack.md
-    uint8_t ep_num = EPNUM_AUDIO_IN & 0x7F;
-    uint32_t volatile *buf_ctrl = &usb_dpram->ep_buf_ctrl[ep_num].in;
-
-    // Clear bits for both buffer 0 and buffer 1 (in case double buffering is ever enabled)
-    uint32_t mask = USB_BUF_CTRL_AVAIL | USB_BUF_CTRL_FULL;
-    *buf_ctrl &= ~(mask | (mask << 16));
-
-    // Note: TinyUSB's internal hw_endpoint_t struct has an 'active' flag that remains stale,
-    // but the IRQ handler will clear it gracefully, so this hardware workaround is sufficient.
-
+    // TinyUSB empties ep_in_ff only when the stream stops, and usb_audio_submit_buffer keeps
+    // writing while it is stopped, so the FIFO would start the stream with old audio.
+    if (TU_U16_LOW(p_request->wValue) != 0) {
+        tud_audio_clear_ep_in_ff();
+    }
     return true;
 }

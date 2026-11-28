@@ -61,16 +61,13 @@ Examples in the existing code:
 
 ## 5.6 — Comments
 
-- Block comments explaining hardware contracts, RP2350 workarounds, or
+- Block comments explaining hardware contracts, workarounds, or
   TinyUSB quirks are part of the source code and should not be deleted as
   cleanup. They are the only documentation of why specific code paths
   exist.
 - Trivial line comments restating what the code obviously does are
   discouraged.
-- TODO/FIXME comments are acceptable when they reference a specific
-  architectural limitation (see the "ARCHITECTURAL LIMITATION" comment
-  in `i2s_audio.c`, documented at
-  `suspected-issues.md`).
+- TODO/FIXME comments are acceptable when they reference a specific architectural limitation documented in `ARCHITECTURE.md`.
 
 ## 5.7 — Build system
 

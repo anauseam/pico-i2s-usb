@@ -2,10 +2,7 @@
 
 ## 3.1 — Module boundary for the USB stack
 
-- All `tud_audio_*` callbacks (entity GET/SET, EP GET/SET, ITF GET/SET,
-  `tud_audio_tx_done_pre_load_cb`, `tud_audio_set_itf_cb`,
-  `tud_audio_set_itf_close_EP_cb`) live in `src/usb_audio.c`. Do not
-  implement them anywhere else.
+- All `tud_audio_*` callbacks live in `src/usb_audio.c`. Do not implement them anywhere else.
 - All USB descriptor tables, descriptor-length macros, and the
   `tud_descriptor_device_cb` / `tud_descriptor_configuration_cb` /
   `tud_descriptor_string_cb` callbacks live in `src/usb_descriptors.c`.
@@ -48,59 +45,23 @@ Any plan that adds, removes, or reorders descriptor blocks must update
 `TUD_CONFIG_DESCRIPTOR` total length argument so that this `static_assert`
 continues to hold.
 
-## 3.4 — Endpoint reactivation workaround
+## 3.4 — Fixed-rate device and flow control
 
-`tud_audio_set_itf_close_EP_cb` in `src/usb_audio.c` manually clears the
-`USB_BUF_CTRL_AVAIL` and `USB_BUF_CTRL_FULL` bits in
-`usb_dpram->ep_buf_ctrl[ep_num].in` for the audio IN endpoint. This is
-the only sanctioned direct access to `usb_dpram` outside of TinyUSB
-itself. The clear must cover both buffer 0 and buffer 1 (shifted mask).
-
-This callback is the **only** hook that fires on Alt 0 in TinyUSB's
-`TUP_DCD_EDPT_ISO_ALLOC` code path. TinyUSB has no
-`dcd_edpt_iso_deactivate` API, so the DCD layer is never notified of
-stream closure. Do not move this logic to `dcd_edpt_iso_activate`
-(Alt 1) — empirical testing showed that clears at activation time
-silently break audio even though they eliminate the panic.
-
-Do not duplicate this access pattern in other modules.
-See `06-workarounds.md §6.2` for the full technical proof and upstream
-PR requirements.
-
-## 3.5 — Fixed-rate device and flow control
-
-This firmware presents a single fixed sample rate. The Clock Source descriptor
-in `src/usb_descriptors.c` declares the frequency control as **read-only**
-(`AUDIO_CTRL_R`). Consequently, Linux's UAC2 driver (`sound/usb/clock.c`)
-never issues `SET_CUR(SAM_FREQ)` — by design and per spec, hosts must not
-write to a read-only control.
+This firmware presents a single fixed sample rate. The Clock Source descriptor in `src/usb_descriptors.c` declares the frequency control **read-only** (`AUDIO20_CTRL_R`), so Linux's UAC2 driver (`sound/usb/clock.c`) never issues `SET_CUR(SAM_FREQ)`.
 
 `tud_audio_set_req_entity_cb` in `src/usb_audio.c` returns `false` (STALL)
 for all SET entity requests. This is correct: the hardware cannot change its
 sample rate, so any SET attempt should be rejected.
 
-**TinyUSB flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`).
-TinyUSB's flow control path initialises its internal `sample_rate_tx` to `0`
-and has no mechanism to seed it except by receiving `SET_CUR(SAM_FREQ)`. Since
-Linux never sends that command for a read-only clock, `sample_rate_tx` stays
-`0` and `audiod_calc_tx_packet_sz()` computes a packet size of `0` permanently.
-This is a proven structural flaw in TinyUSB, not a misconfiguration of this
-project. See `06-workarounds.md §6.1` for the full proof including Linux kernel
-source citations and empirical serial-spy logs.
+**TinyUSB flow control is on** (its default). It sizes packets from the sample rate it stores, which it takes from `SET_CUR(SAM_FREQ)` (`audio_device.c:1306-1311`) or from a `GET_CUR(SAM_FREQ)` reply sent through `tud_audio_buffer_and_schedule_control_xfer` (`:1712-1720`). Linux never sends `SET_CUR` to this device: its UAC2 driver skips writes to a read-only clock, and skips them when `GET_CUR` already returns the requested rate (`sound/usb/clock.c`, `snd_usb_set_sample_rate_v2v3()` and `set_sample_rate_v2v3()`). A serial spy in `audiod_control_request` confirmed that only `GET_RANGE` and `GET_CUR` arrive. So every reply in `tud_audio_get_req_entity_cb` goes through `tud_audio_buffer_and_schedule_control_xfer`; a reply through `tud_control_xfer` would leave the rate at `0`, and packets would fall back to whatever the FIFO holds (`:1893-1894`).
 
 If multi-rate support is added in the future (e.g. supporting 44.1 kHz and
 48 kHz and allowing the host OS to switch between them), do the following:
 
-1. Change the Clock Source descriptor `_ctrl` field to `AUDIO_CTRL_RW` so the
-   host is permitted to issue `SET_CUR(SAM_FREQ)`.
+1. Change the Clock Source descriptor `_ctrl` field to `AUDIO20_CTRL_RW` so the host is permitted to issue `SET_CUR(SAM_FREQ)`.
 2. Update the `GET_RANGE` handler to advertise multiple `subrange` entries
    instead of a single fixed `bMin == bMax`.
 3. Implement a real SET handler in `usb_audio.c` that reconfigures the PIO
 clock divider in `i2s_audio.c`.
-4. Re-evaluate `CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL` — once the host can and
-   does send `SET_CUR`, the upstream fix for the `sample_rate_tx`
-   initialization path would need to land in TinyUSB first, OR the project
-   must seed `sample_rate_tx` via an internal patch.
 
-Until all of the above are done, the STALL behaviour and `EP_IN_FLOW_CONTROL 0`
-stay.
+Until all of the above are done, the STALL behaviour stays.

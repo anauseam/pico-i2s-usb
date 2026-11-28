@@ -10,12 +10,9 @@ obj/
 
 # --- Editor / IDE ---
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
 .cache/
 compile_commands.json
+CMakeUserPresets.json
 .clineignore
 plan.md
 reference/

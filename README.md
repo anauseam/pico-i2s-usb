@@ -148,7 +148,7 @@ Analog Signal
 1. **PIO Capture** — A custom PIO state machine receives I2S data on external BCLK/LRCK edges, packing each 32-bit sample into the PIO RX FIFO.
 2. **DMA Ping-Pong** — Two DMA channels are chained together. While one fills a 256-word buffer from the PIO FIFO, the other's completed buffer is available for consumption. A DMA completion interrupt signals the main loop.
 3. **Main Loop** — Polls for completed DMA buffers and writes them directly into TinyUSB's internal FIFO via `tud_audio_write()`. The I2S data is passed through without format conversion — the UAC2 descriptors tell the host how to interpret the 32-bit containers (24-bit audio in a 32-bit sample slot).
-4. **USB Transmission** — TinyUSB autonomously drains its 4096-byte software FIFO into Isochronous IN packets at the USB Full-Speed 1ms frame rate. The FIFO decouples the 2.66ms DMA burst rate from the 1ms USB polling rate.
+4. **USB Transmission** — TinyUSB drains its 4096-byte software FIFO into Isochronous IN packets at the USB Full-Speed 1 ms frame rate. The FIFO decouples the 2.66 ms DMA burst rate from the 1 ms USB polling rate. Each packet carries 48 frames, or 47 or 49 when the FIFO drifts from half full; that variation tells the host the ADC's true rate.
 
 ### USB Audio Implementation
 
@@ -180,19 +180,7 @@ Clock Source (Internal Fixed, ID=4)
 | Max EP Size | `(AUDIO_RATE_MAX / 1000 + 1) × AUDIO_CHANNELS × 4` bytes |
 | SW FIFO | 4096 bytes |
 
-#### TinyUSB Configuration (`tusb_config.h`)
-
-The TinyUSB stack requires several non-default configuration choices on the RP2350. See `docs/internals/06-workarounds.md` for the full proof behind each item.
-
-- **Flow control is disabled** (`CFG_TUD_AUDIO_EP_IN_FLOW_CONTROL 0`). TinyUSB's flow control path in `audiod_calc_tx_packet_sz()` requires `sample_rate_tx` to be initialised by receiving a `SET_CUR(SAM_FREQ)` command from the host. For a fixed-frequency device, Linux never sends this command: the Clock Source descriptor declares the frequency control as read-only (`AUDIO_CTRL_R`), and the Linux UAC2 driver (`sound/usb/clock.c`) correctly skips `SET_CUR` for read-only controls. Because `sample_rate_tx` stays `0`, TinyUSB computes a packet size of `0` permanently. This is a proven structural flaw in TinyUSB's UAC2 flow control for fixed-rate devices. See `docs/internals/06-workarounds.md §6.1` for the full proof.
-
-#### Isochronous Endpoint Management (`usb_audio.c`)
-
-TinyUSB's RP2040/RP2350 DCD uses `TUP_DCD_EDPT_ISO_ALLOC`, which pre-allocates Isochronous endpoints and skips the standard close/reopen sequence during `SET_INTERFACE` alternate setting transitions. This leaves the hardware DPRAM `USB_BUF_CTRL_AVAIL` bit set after the host deactivates the stream (Alt 0). When the host reactivates (Alt 1), the DCD attempts to set the bit again, triggering a hardware panic (`ep 81 was already available`). This was confirmed via UART debug output.
-
-`tud_audio_set_itf_close_EP_cb` manually clears the `AVAIL` and `FULL` bits in the RP2350 USB DPRAM buffer control registers for the audio endpoint before TinyUSB reactivates it.
-
-All remaining UAC2 control callbacks (GET/SET for entities, endpoints, and interfaces) return `false` to correctly STALL unsupported features, complying with the standard.
+The firmware answers the host's sample-rate, clock-valid, mute and volume queries and STALLs every other UAC2 control request.
 
 ### Clock Architecture
 
@@ -221,6 +209,8 @@ The ADC's master clock (MCLK) comes from one of two places, selected by `MCLK_SO
 pico-i2s-usb/
 ├── CMakeLists.txt                  # Build configuration
 ├── pico_sdk_import.cmake           # Pico SDK integration
+├── lib/
+│   └── tinyusb/                    # TinyUSB USB stack (git submodule, pinned version)
 ├── scripts/
 │   └── build-matrix.sh             # Builds every supported configuration
 └── src/
@@ -232,8 +222,7 @@ pico-i2s-usb/
     ├── i2s_rx_controller.pio       # PIO program: Controller mode (educational, NOT built)
     ├── i2s_rx_target.pio           # PIO program: Target mode (receives external clocks)
     ├── dma_audio.c / .h            # DMA ping-pong buffer management and ISR
-    ├── usb_audio.c / .h            # TinyUSB callbacks, direct ep_in_ff submission,
-    │                               # RP2350 workarounds
+    ├── usb_audio.c / .h            # TinyUSB callbacks, direct ep_in_ff submission
     ├── usb_descriptors.c / .h      # UAC2 device, configuration, and string descriptors
     └── tusb_config.h               # TinyUSB stack configuration
 ```
@@ -272,34 +261,44 @@ This project uses standard CMake and relies on the official Raspberry Pi Pico SD
 
 **Prerequisites:**
 
-- Raspberry Pi Pico SDK (v2.2.0+)
+- Raspberry Pi Pico SDK (v2.3.1+)
 - Appropriate toolchain package (`arm-none-eabi-gcc` or `riscv64-elf-gcc`)
 
 **Standard Build Flow:**
 
-```bash
-mkdir build && cd build
+TinyUSB is included as a git submodule in `lib/tinyusb`, so clone with `--recursive` (or run `git submodule update --init` in an existing clone):
 
-# Configure (Default ARM)
-cmake -DPICO_PLATFORM=rp2350 ..
+```bash
+git clone --recursive https://github.com/anauseam/pico-i2s-usb.git
+cd pico-i2s-usb
+
+# Configure (ARM)
+cmake -S . -B build -DPICO_PLATFORM=rp2350
 
 # OR Configure (RISC-V)
-# cmake -DPICO_PLATFORM=rp2350-riscv ..
+# cmake -S . -B build -DPICO_PLATFORM=rp2350-riscv
 
 # Build
-make -j$(nproc)
+cmake --build build -j$(nproc)
 ```
 
 The compiled `pico-i2s-usb.uf2` will be placed in the `build/` directory.
 
 **Advanced Configuration:**
-If your SDK or toolchain are in non-standard locations, or your toolchain uses a different naming convention (e.g., on Arch Linux), you may need to specify them manually:
+If your SDK or toolchain are in non-standard locations, or your toolchain uses a different naming convention, you may need to specify them manually. For example, RISC-V with Arch Linux's `riscv64-elf-gcc` package:
 
 ```bash
-cmake -DPICO_SDK_PATH=/path/to/sdk \
+cmake -S . -B build -DPICO_PLATFORM=rp2350-riscv -DPICO_TOOLCHAIN_PATH=/usr/bin -DPICO_GCC_TRIPLE=riscv64-elf
+cmake --build build -j$(nproc)
+```
+
+In general:
+
+```bash
+cmake -S . -B build -DPICO_PLATFORM=rp2350 \
+      -DPICO_SDK_PATH=/path/to/sdk \
       -DPICO_TOOLCHAIN_PATH=/path/to/bin \
-      -DPICO_GCC_TRIPLE=your-compiler-triple \
-      ..
+      -DPICO_GCC_TRIPLE=your-compiler-triple
 ```
 
 *Note: Pre-compiled binaries for the default configuration are available on the Releases page.*

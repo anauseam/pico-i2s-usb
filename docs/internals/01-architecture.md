@@ -29,7 +29,6 @@ SDK setup functions.
 | TinyUSB stack init (`tusb_init`, `tud_task`)        | `src/usb_audio.{c,h}`                   |
 | All `tud_audio_*` callbacks                         | `src/usb_audio.{c,h}`                   |
 | All USB descriptor tables and `tud_descriptor_*_cb` | `src/usb_descriptors.{c,h}`             |
-| RP2350 USB DPRAM access (`usb_dpram->...`)          | `src/usb_audio.{c,h}` (workaround only) |
 
 Adding a new peripheral requires a new module pair (`<name>.c` + `<name>.h`)
 plus a new entry in `CMakeLists.txt`. Do not extend an existing module to

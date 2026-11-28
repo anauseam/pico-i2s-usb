@@ -31,7 +31,7 @@ A new setting takes the same form as the existing ones:
 ## 4.2 — TinyUSB stack config lives in `tusb_config.h`
 
 All `CFG_TUD_*`, `CFG_TUSB_*`, and TinyUSB descriptor-length macros
-(`TUD_AUDIO_MIC_TWO_CH_DESC_LEN`, `CFG_TUD_AUDIO_FUNC_1_DESC_LEN`, etc.)
+(`TUD_AUDIO_MIC_TWO_CH_DESC_LEN`, `CFG_TUD_AUDIO_CTRL_BUF_SZ`, etc.)
 live in `src/tusb_config.h`. Do not duplicate or override these elsewhere.
 
 `tusb_config.h` is allowed to `#include "audio_config.h"` to derive USB
